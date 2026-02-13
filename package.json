@@ -1,0 +1,16 @@
+{
+  "name": "@ootc/yah",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.6.5",
+  "dependencies": {
+    "openai": "^6.21.0"
+  }
+}

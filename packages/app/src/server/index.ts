@@ -1,20 +1,27 @@
 import express from "express"
-import configRoutes from "./routes/config.js"
-import { initDB } from "../db/index.js"
+import { AppCtx } from "../appCtx.js"
+import { createConfigRouter } from "./routes/config.js"
+import { createSearchRouter } from "./routes/search.js"
+import { createMailRouter } from "./routes/mail.js"
 
-function main() {
-    initDB() // 🔥 runs before server starts
-
+export function createServer(appCtx: AppCtx) {
     const app = express()
     app.use(express.json())
 
-    app.use("/api", configRoutes)
-    app.use("/api", configRoutes)
-    app.use("/api", configRoutes)
+    if (appCtx.config.server.enableConfigRoutes) {
+        app.use("/api", createConfigRouter(appCtx))
+    }
 
-    app.listen(3000, () => {
-        console.log("Server running on http://localhost:3000")
-    })
+    app.use("/api", createSearchRouter(appCtx))
+    app.use("/api", createMailRouter(appCtx))
+
+    return app
 }
 
-main()
+export function startServer(appCtx: AppCtx) {
+    const app = createServer(appCtx)
+    const { host, port } = appCtx.config.server
+    return app.listen(port, host, () => {
+        console.log(`Server running on http://${host}:${port}`)
+    })
+}

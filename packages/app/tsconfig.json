@@ -14,5 +14,6 @@
         "rootDir": "src",
         "outDir": "dist",
         "noEmit": false
-    }
+    },
+    "exclude": ["tests"]
 }

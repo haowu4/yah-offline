@@ -3,12 +3,19 @@
 
 ## Usage 
 
-```
+```bash title='to start server'
 npx @ootc/yah start
 ```
 
 
+```bash title='to get config value'
+npx @ootc/yah config get [key]
 ```
-YAH_DB_PATH=/path/to/db npx @ootc/yah start
+
+```bash title='to set config value'
+npx @ootc/yah config set [key] -v [value]
 ```
- 
+
+```bash title='to set config value with editor'
+npx @ootc/yah config set [key] -e
+```

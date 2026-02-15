@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json"
+    "dev": "node --import tsx src/cli.ts start",
+    "start": "node --import tsx src/cli.ts start",
+    "build": "tsc -p tsconfig.json",
+    "smoke:db": "node --import tsx tests/db-smoke.ts"
   },
   "dependencies": {
     "axios": "^1.13.5",
     "better-sqlite3": "^12.6.2",
+    "dotenv": "^17.2.3",
     "express": "^4.21.1",
     "knex": "^3.1.0"
   },

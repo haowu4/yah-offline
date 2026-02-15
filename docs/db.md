@@ -3,7 +3,7 @@
 ```ts
 type ConfigValue = {
     id: int
-    key: string
+    key: string // unique (case-insensitive)
     value: string
 }
 ```
@@ -57,6 +57,7 @@ type MailThread = {
 
 type MailMessage = {
     id: int
+    thread_id: int
     who: 'user' | 'assistant'
     contact_id?: int
     title: string
@@ -73,6 +74,12 @@ type FileAttachment = {
     createdAt: Dates
 }
 ```
+
+#### Relationships
+
+One MailThread has many MailMessage
+One MailMessage has many FileAttachment
+One Contact has many MailMessage (optional)
 
 
 

@@ -83,4 +83,16 @@ export const migrations: Migration[] = [
 
         `,
     },
+    {
+        name: "002_article_slug",
+        sql: `
+        ALTER TABLE article ADD COLUMN slug TEXT;
+
+        UPDATE article
+        SET slug = lower(trim(replace(title, ' ', '-')))
+        WHERE slug IS NULL OR slug = '';
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_article_slug_unique ON article(slug);
+        `,
+    },
 ]

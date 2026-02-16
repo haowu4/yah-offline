@@ -1,0 +1,46 @@
+.loading,
+.errorWrap {
+  width: min(var(--container-max), calc(100% - (var(--container-gutter) * 2)));
+  margin: 0 auto;
+  padding: 28px 0;
+}
+
+.errorText {
+  color: #b00020;
+}
+
+.page {
+  width: min(var(--container-max), calc(100% - (var(--container-gutter) * 2)));
+  margin: 0 auto;
+  padding: 30px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.main {
+  flex: 2 1 660px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  padding: 20px;
+}
+
+.backRow {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.sidebar {
+  flex: 1 1 270px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  padding: 18px;
+  align-self: flex-start;
+}
+
+.sidebarList {
+  padding-left: 18px;
+}

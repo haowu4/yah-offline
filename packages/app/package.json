@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node --import tsx src/cli.ts start",
+    "dev": "tsx watch src/cli.ts start",
     "start": "node --import tsx src/cli.ts start",
     "build": "tsc -p tsconfig.json",
     "smoke:db": "node --import tsx tests/db-smoke.ts"

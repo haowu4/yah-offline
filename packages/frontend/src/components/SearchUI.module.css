@@ -1,0 +1,249 @@
+.container {
+  width: min(var(--container-max), calc(100% - (var(--container-gutter) * 2)));
+  margin: 0 auto;
+  padding: 22px 0 28px;
+}
+
+.statusLine {
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: #555;
+  letter-spacing: 0.1px;
+}
+
+.statusDots {
+  display: inline-flex;
+  width: 1.8em;
+}
+
+.statusDots span {
+  width: 0.6em;
+  text-align: center;
+  animation: status-dot-blink 1.2s infinite;
+  opacity: 0.25;
+}
+
+.statusDots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.statusDots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes status-dot-blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.input {
+  flex: 1;
+  padding: 12px 14px;
+  border: 2px solid var(--line-strong);
+  border-radius: 2px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.input::placeholder {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(31, 77, 255, 0.16);
+  outline-offset: 0;
+}
+
+.submit {
+  border: 2px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--line-strong);
+  color: #fff;
+  padding: 10px 18px;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.24px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.submit:hover {
+  background: #000;
+}
+
+.error {
+  color: #b00020;
+}
+
+.empty {
+  text-align: center;
+  padding: 48px 0 24px;
+}
+
+.emptyTitle {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.home {
+  min-height: calc(100vh - 90px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.homeForm {
+  width: min(780px, 100%);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.homeInput {
+  flex: 1;
+  height: 54px;
+  padding: 0 18px;
+  border: 2px solid var(--line-strong);
+  border-radius: 2px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.homeInput::placeholder {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.homeInput:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(31, 77, 255, 0.16);
+  outline-offset: 0;
+}
+
+.grid {
+  display: grid;
+  gap: 0;
+}
+
+.intentCard {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.intentTitle {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.articleList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.articleItem {
+  padding: 10px 0;
+}
+
+.articleItem + .articleItem {
+  border-top: 1px dashed #dcdcd3;
+}
+
+.articleLink {
+  display: inline-block;
+  margin-bottom: 5px;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #1538b8;
+}
+
+.articleLink:hover {
+  text-decoration: underline;
+}
+
+.articleSnippet {
+  margin: 0;
+  color: #2f2f2f;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 3em;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.skeletonCard {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.skeletonIntent {
+  width: 180px;
+  height: 12px;
+  margin-bottom: 12px;
+  background: linear-gradient(90deg, #ecece8 0%, #f5f5f1 50%, #ecece8 100%);
+  background-size: 220% 100%;
+  animation: loading-shimmer 1.1s linear infinite;
+}
+
+.skeletonTitle,
+.skeletonLine,
+.skeletonLineShort {
+  height: 11px;
+  background: linear-gradient(90deg, #ecece8 0%, #f5f5f1 50%, #ecece8 100%);
+  background-size: 220% 100%;
+  animation: loading-shimmer 1.1s linear infinite;
+}
+
+.skeletonTitle {
+  width: 58%;
+  margin-bottom: 10px;
+}
+
+.skeletonLine {
+  width: 92%;
+  margin-bottom: 8px;
+}
+
+.skeletonLineShort {
+  width: 70%;
+}
+
+@keyframes loading-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

@@ -1,0 +1,16 @@
+.container {
+  width: min(var(--container-max), calc(100% - (var(--container-gutter) * 2)));
+  margin: 0 auto;
+  padding: 30px 0;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.title {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 34px;
+  line-height: 1.1;
+  letter-spacing: -0.4px;
+}

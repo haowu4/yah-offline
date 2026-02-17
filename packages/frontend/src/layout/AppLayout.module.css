@@ -33,18 +33,11 @@
   white-space: nowrap;
 }
 
-.brandBadge {
-  width: 32px;
-  height: 32px;
-  border-radius: 2px;
-  background: var(--brand);
-  color: var(--surface);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 15px;
-  letter-spacing: 0.3px;
+.brandLogo {
+  width: 42px;
+  height: 42px;
+  display: block;
+  object-fit: contain;
 }
 
 .brandText {
@@ -60,6 +53,7 @@
   min-width: 180px;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .searchInput {
@@ -89,6 +83,24 @@
   border-color: var(--accent);
   outline: 2px solid rgba(31, 77, 255, 0.16);
   outline-offset: 0;
+}
+
+.searchSubmit {
+  height: 42px;
+  border: 2px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--line-strong);
+  color: #fff;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.searchSubmit:hover {
+  background: #000;
 }
 
 .spacer {
@@ -190,5 +202,10 @@
 
   .menuButton {
     min-width: 92px;
+  }
+
+  .searchSubmit {
+    padding: 0 10px;
+    font-size: 12px;
   }
 }

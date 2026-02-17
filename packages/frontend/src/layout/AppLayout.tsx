@@ -64,7 +64,7 @@ export function AppLayout() {
       <header className={styles.header}>
         <div className={styles.inner}>
           <Link to="/" className={styles.brandLink}>
-            <span className={styles.brandBadge}>Y</span>
+            <img src="/logo.png" alt="yah" className={styles.brandLogo} />
             <strong className={styles.brandText}>yah</strong>
           </Link>
 
@@ -77,6 +77,9 @@ export function AppLayout() {
                 placeholder="Search"
                 className={styles.searchInput}
               />
+              <button type="submit" className={styles.searchSubmit}>
+                Search
+              </button>
             </form>
           ) : null}
 

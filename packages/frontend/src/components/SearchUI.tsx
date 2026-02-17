@@ -24,8 +24,9 @@ export function SearchUI(props: SearchUIProps) {
 
   const hasResults = props.queryIntents.length > 0
   const isHome = !props.query && !hasResults
-  const statusMessage = hasResults ? 'Writing your answer' : 'Understanding your search'
+  const statusMessage = hasResults ? 'Almost there, finalizing results' : 'Understanding your query'
   const showResultSummary = !isHome && !props.isLoading && hasResults && !props.error
+  const normalize = (value: string) => value.trim().toLowerCase()
 
   return (
     <div className={styles.container}>
@@ -62,26 +63,32 @@ export function SearchUI(props: SearchUIProps) {
 
       {hasResults ? (
         <div className={styles.grid}>
-          {props.queryIntents.map((intent) => (
-            <section key={intent.id} className={styles.intentCard}>
-              <h2 className={styles.intentTitle}>{intent.intent}</h2>
-              {intent.isLoading ? <p>Writing this answer...</p> : null}
-              {intent.articles.length === 0 && !intent.isLoading ? <p>No answer yet.</p> : null}
-              <ul className={styles.articleList}>
-                {intent.articles.map((article) => (
-                  <li key={article.id} className={styles.articleItem}>
-                    <Link
-                      to={`/content/${article.slug}?query=${encodeURIComponent(props.query)}`}
-                      className={styles.articleLink}
-                    >
-                      {article.title}
-                    </Link>
-                    <p className={styles.articleSnippet}>{article.snippet}</p>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+          {props.queryIntents.map((intent) => {
+            const firstArticle = intent.articles[0]
+            const isDuplicateTitle =
+              firstArticle && normalize(firstArticle.title) === normalize(intent.intent)
+
+            return (
+              <section key={intent.id} className={styles.intentCard}>
+                {!isDuplicateTitle ? <h2 className={styles.intentTitle}>{intent.intent}</h2> : null}
+                {intent.isLoading ? <p className={styles.intentStatus}>Finalizing this result...</p> : null}
+                {intent.articles.length === 0 && !intent.isLoading ? <p>No answer yet.</p> : null}
+                <ul className={styles.articleList}>
+                  {intent.articles.map((article) => (
+                    <li key={article.id} className={styles.articleItem}>
+                      <Link
+                        to={`/content/${article.slug}?query=${encodeURIComponent(props.query)}`}
+                        className={styles.articleLink}
+                      >
+                        {article.title}
+                      </Link>
+                      <p className={styles.articleSnippet}>{article.snippet}</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )
+          })}
           {props.isLoading ? (
             <>
               {Array.from({ length: hasResults ? 1 : 3 }).map((_, idx) => (

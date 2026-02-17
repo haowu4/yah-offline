@@ -127,9 +127,10 @@ export function createSearchRouter(ctx: AppCtx) {
         ? intentResult.intents
         : [{ value: query.value }]
 
-      for (const intentCandidate of intents) {
+      const intentRecords = intents.map((intentCandidate) => searchDB.upsertIntent(queryId, intentCandidate.value))
+
+      for (const intentRecord of intentRecords) {
         if (isClosed) return
-        const intentRecord = searchDB.upsertIntent(queryId, intentCandidate.value)
         sendEvent({
           type: "intent.created",
           queryId,
@@ -138,7 +139,10 @@ export function createSearchRouter(ctx: AppCtx) {
             value: intentRecord.intent,
           },
         })
+      }
 
+      for (const intentRecord of intentRecords) {
+        if (isClosed) return
         const articleResult = await searchLLM.createArticle({
           query: query.value,
           intent: intentRecord.intent,

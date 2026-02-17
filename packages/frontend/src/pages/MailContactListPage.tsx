@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { listContacts } from '../lib/api/mail'
 import type { ApiMailContact } from '../lib/api/mail'
+import styles from './MailCommon.module.css'
 
 export function MailContactListPage() {
   const [contacts, setContacts] = useState<ApiMailContact[]>([])
@@ -19,16 +20,21 @@ export function MailContactListPage() {
   }, [])
 
   return (
-    <div>
-      <h1>Contacts</h1>
-      <p>
+    <div className={styles.container}>
+      <h1 className={styles.title}>Contacts</h1>
+      <div className={styles.actions}>
         <Link to="/mail/new-contact">Create contact</Link>
-      </p>
-      {error ? <p>{error}</p> : null}
-      <ul>
+        <Link to="/mail">Back to threads</Link>
+      </div>
+      {error ? <p className={styles.error}>{error}</p> : null}
+      <ul className={styles.list}>
         {contacts.map((contact) => (
-          <li key={contact.id}>
-            <Link to={`/mail/contact/${contact.slug}`}>{contact.name}</Link> ({contact.slug})
+          <li key={contact.id} className={styles.item}>
+            <p className={styles.itemTitle}>
+              <Link to={`/mail/contact/${contact.slug}`}>{contact.name}</Link>
+              <span className={styles.badge}>{contact.slug}</span>
+            </p>
+            <p className={styles.meta}>default model: {contact.defaultModel || 'not set'}</p>
           </li>
         ))}
       </ul>

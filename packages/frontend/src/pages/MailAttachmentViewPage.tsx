@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import { getAttachment } from '../lib/api/mail'
+import styles from './MailCommon.module.css'
 
 type AttachmentPayload = {
   id: number
@@ -36,16 +37,23 @@ export function MailAttachmentViewPage() {
   }, [attachmentSlug, replyId, threadUid])
 
   return (
-    <div>
-      <h1>Attachment</h1>
-      {error ? <p>{error}</p> : null}
-      {!attachment ? <p>Loading...</p> : null}
-      {attachment?.kind === 'text' ? <pre>{attachment.textContent ?? ''}</pre> : null}
+    <div className={styles.container}>
+      <h1 className={styles.title}>Attachment</h1>
+      <div className={styles.actions}>
+        <Link to={`/mail/thread/${threadUid}/reply/${replyId}`}>Back to reply</Link>
+      </div>
+      {error ? <p className={styles.error}>{error}</p> : null}
+      {!attachment ? <p className={styles.statusLine}>Loading...</p> : null}
+      {attachment?.kind === 'text' ? (
+        <div className={styles.contentBox}>
+          <pre className={styles.pre}>{attachment.textContent ?? ''}</pre>
+        </div>
+      ) : null}
       {attachment?.kind === 'image' && attachment.base64Content ? (
         <img
+          className={styles.image}
           alt={attachment.filename}
           src={`data:${attachment.mimeType};base64,${attachment.base64Content}`}
-          style={{ maxWidth: '100%' }}
         />
       ) : null}
     </div>

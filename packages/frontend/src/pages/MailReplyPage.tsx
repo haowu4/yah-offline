@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { getReply } from '../lib/api/mail'
 import type { ApiMailAttachmentSummary, ApiMailReply } from '../lib/api/mail'
+import styles from './MailCommon.module.css'
 
 export function MailReplyPage() {
   const params = useParams()
@@ -27,17 +28,29 @@ export function MailReplyPage() {
   }, [replyId, threadUid])
 
   return (
-    <div>
-      <h1>Reply</h1>
-      {error ? <p>{error}</p> : null}
-      {reply ? <MarkdownPreview content={reply.content} /> : <p>Loading...</p>}
+    <div className={styles.container}>
+      <h1 className={styles.title}>Reply</h1>
+      <div className={styles.actions}>
+        <Link to={`/mail/thread/${threadUid}`}>Back to thread</Link>
+      </div>
+      {error ? <p className={styles.error}>{error}</p> : null}
+      {reply ? (
+        <div className={styles.contentBox}>
+          <MarkdownPreview content={reply.content} />
+        </div>
+      ) : (
+        <p className={styles.statusLine}>Loading...</p>
+      )}
 
-      <ul>
+      <ul className={styles.list}>
         {attachments.map((attachment) => (
-          <li key={attachment.id}>
-            <Link to={`/mail/thread/${threadUid}/reply/${replyId}/attachment/${attachment.slug}`}>
-              {attachment.filename}
-            </Link>
+          <li key={attachment.id} className={styles.item}>
+            <p className={styles.itemTitle}>
+              <Link to={`/mail/thread/${threadUid}/reply/${replyId}/attachment/${attachment.slug}`}>
+                {attachment.filename}
+              </Link>
+              <span className={styles.badge}>{attachment.kind}</span>
+            </p>
           </li>
         ))}
       </ul>

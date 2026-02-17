@@ -10,6 +10,7 @@ import {
   markThreadRead,
 } from '../lib/api/mail'
 import type { ApiMailContact, ApiMailReply } from '../lib/api/mail'
+import styles from './MailCommon.module.css'
 
 export function MailThreadPage() {
   const params = useParams()
@@ -50,25 +51,29 @@ export function MailThreadPage() {
   const effectiveThreadUid = threadUidState ?? threadUid
 
   return (
-    <div>
-      <h1>{effectiveThreadUid ? `Thread ${effectiveThreadUid.slice(0, 8)}` : 'New Thread'}</h1>
-      <p>Title: {threadTitle || '(untitled)'}</p>
-      {effectiveThreadUid ? (
-        <p>
+    <div className={styles.container}>
+      <h1 className={styles.title}>{effectiveThreadUid ? `Thread ${effectiveThreadUid.slice(0, 8)}` : 'New Thread'}</h1>
+      <p className={styles.meta}>Title: {threadTitle || '(untitled)'}</p>
+      <div className={styles.actions}>
+        <Link to="/mail">Back to threads</Link>
+        {effectiveThreadUid ? (
           <Link to={`/mail/thread/${effectiveThreadUid}/attachment`}>View attachments</Link>
-        </p>
-      ) : null}
-      {error ? <p>{error}</p> : null}
+        ) : null}
+      </div>
+      {error ? <p className={styles.error}>{error}</p> : null}
 
-      <ul>
+      <ul className={styles.list}>
         {replies.map((reply) => (
-          <li key={reply.id}>
-            <p>
-              <strong>{reply.role}</strong> {reply.contact ? `(${reply.contact.name})` : ''} | unread:{' '}
-              {reply.unread ? 'yes' : 'no'}
+          <li key={reply.id} className={styles.item}>
+            <p className={styles.itemTitle}>
+              <span>{reply.role}</span>
+              {reply.contact ? <span className={styles.badge}>{reply.contact.name}</span> : null}
+              {reply.unread ? <span className={styles.badge}>unread</span> : null}
             </p>
-            <MarkdownPreview content={reply.content} />
-            <p>
+            <div className={styles.contentBox}>
+              <MarkdownPreview content={reply.content} />
+            </div>
+            <p className={styles.meta}>
               <Link to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}`}>Open reply</Link>
             </p>
           </li>
@@ -76,6 +81,7 @@ export function MailThreadPage() {
       </ul>
 
       <form
+        className={styles.formGrid}
         onSubmit={(event) => {
           event.preventDefault()
           const form = new FormData(event.currentTarget)
@@ -119,12 +125,10 @@ export function MailThreadPage() {
         }}
       >
         {!effectiveThreadUid ? (
-          <p>
-            <input name="title" placeholder="Thread title (optional)" />
-          </p>
+          <input className={styles.input} name="title" placeholder="Thread title (optional)" />
         ) : null}
-        <p>
-          <select name="contactSlug" defaultValue="">
+        <div className={styles.row}>
+          <select className={styles.select} name="contactSlug" defaultValue="">
             <option value="">No contact</option>
             {contacts.map((contact) => (
               <option key={contact.id} value={contact.slug}>
@@ -132,38 +136,38 @@ export function MailThreadPage() {
               </option>
             ))}
           </select>
-        </p>
-        <p>
-          <input name="model" list="mail-models" placeholder="Model" />
-          <datalist id="mail-models">
-            {models.map((model) => (
-              <option key={model} value={model} />
-            ))}
-          </datalist>
-        </p>
-        <p>
-          <textarea name="content" rows={8} placeholder="Write mail..." />
-        </p>
-        <button type="submit">Send</button>
+          <>
+            <input className={styles.input} name="model" list="mail-models" placeholder="Model" />
+            <datalist id="mail-models">
+              {models.map((model) => (
+                <option key={model} value={model} />
+              ))}
+            </datalist>
+          </>
+        </div>
+        <textarea className={styles.textarea} name="content" rows={8} placeholder="Write mail..." />
+        <div className={styles.actions}>
+          <button className={styles.button} type="submit">Send</button>
+          {effectiveThreadUid ? (
+            <button
+              className={styles.buttonSecondary}
+              type="button"
+              onClick={() => {
+                void markThreadRead(effectiveThreadUid)
+                  .then(() => getThread(effectiveThreadUid))
+                  .then((payload) => {
+                    setReplies(payload.replies)
+                  })
+                  .catch((err: unknown) => {
+                    setError(err instanceof Error ? err.message : 'Failed to mark as read')
+                  })
+              }}
+            >
+              Mark thread read
+            </button>
+          ) : null}
+        </div>
       </form>
-
-      {effectiveThreadUid ? (
-        <button
-          type="button"
-          onClick={() => {
-            void markThreadRead(effectiveThreadUid)
-              .then(() => getThread(effectiveThreadUid))
-              .then((payload) => {
-                setReplies(payload.replies)
-              })
-              .catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : 'Failed to mark as read')
-              })
-          }}
-        >
-          Mark thread read
-        </button>
-      ) : null}
     </div>
   )
 }

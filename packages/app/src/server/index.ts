@@ -16,6 +16,11 @@ export function createServer(appCtx: AppCtx) {
 
     app.use("/api", createSearchRouter(appCtx))
     app.use("/api", createMailRouter(appCtx, mailEventHub))
+    app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        const message = err instanceof Error ? err.message : "Internal server error"
+        console.error(err)
+        res.status(500).json({ error: message })
+    })
 
     return {
         app,

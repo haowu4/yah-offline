@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import { getContact, updateContact } from '../lib/api/mail'
 import type { ApiMailContact } from '../lib/api/mail'
+import styles from './MailCommon.module.css'
 
 export function MailContactDetailPage() {
   const params = useParams()
@@ -22,15 +23,19 @@ export function MailContactDetailPage() {
       })
   }, [slug])
 
-  if (!slug) return <div>Missing slug</div>
+  if (!slug) return <div className={styles.container}>Missing slug</div>
 
   return (
-    <div>
-      <h1>Contact</h1>
-      {error ? <p>{error}</p> : null}
-      {!contact ? <p>Loading...</p> : null}
+    <div className={styles.container}>
+      <h1 className={styles.title}>Contact</h1>
+      <div className={styles.actions}>
+        <Link to="/mail/contact">Back to contacts</Link>
+      </div>
+      {error ? <p className={styles.error}>{error}</p> : null}
+      {!contact ? <p className={styles.statusLine}>Loading...</p> : null}
       {contact ? (
         <form
+          className={styles.formGrid}
           onSubmit={(event) => {
             event.preventDefault()
             const form = new FormData(event.currentTarget)
@@ -51,25 +56,22 @@ export function MailContactDetailPage() {
               })
           }}
         >
-          <p>
-            <input name="name" defaultValue={contact.name} placeholder="Name" />
-          </p>
-          <p>
-            <input name="slug" defaultValue={contact.slug} placeholder="Slug" />
-          </p>
-          <p>
-            <input name="icon" defaultValue={contact.icon} placeholder="Icon" />
-          </p>
-          <p>
-            <input name="color" defaultValue={contact.color} placeholder="Color" />
-          </p>
-          <p>
-            <input name="defaultModel" defaultValue={contact.defaultModel ?? ''} placeholder="Default model" />
-          </p>
-          <p>
-            <textarea name="instruction" defaultValue={contact.instruction} rows={6} />
-          </p>
-          <button type="submit">Save</button>
+          <input className={styles.input} name="name" defaultValue={contact.name} placeholder="Name" />
+          <div className={styles.row}>
+            <input className={styles.input} name="slug" defaultValue={contact.slug} placeholder="Slug" />
+            <input className={styles.input} name="icon" defaultValue={contact.icon} placeholder="Icon" />
+          </div>
+          <div className={styles.row}>
+            <input className={styles.input} name="color" defaultValue={contact.color} placeholder="Color" />
+            <input
+              className={styles.input}
+              name="defaultModel"
+              defaultValue={contact.defaultModel ?? ''}
+              placeholder="Default model"
+            />
+          </div>
+          <textarea className={styles.textarea} name="instruction" defaultValue={contact.instruction} rows={6} />
+          <button className={styles.button} type="submit">Save</button>
         </form>
       ) : null}
     </div>

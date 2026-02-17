@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { createContact } from '../lib/api/mail'
+import styles from './MailCommon.module.css'
 
 export function MailNewContactPage() {
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <div>
-      <h1>New Contact</h1>
-      {error ? <p>{error}</p> : null}
+    <div className={styles.container}>
+      <h1 className={styles.title}>New Contact</h1>
+      {error ? <p className={styles.error}>{error}</p> : null}
       <form
+        className={styles.formGrid}
         onSubmit={(event) => {
           event.preventDefault()
           const form = new FormData(event.currentTarget)
@@ -36,25 +38,17 @@ export function MailNewContactPage() {
             })
         }}
       >
-        <p>
-          <input name="name" placeholder="Name" />
-        </p>
-        <p>
-          <input name="slug" placeholder="Slug" />
-        </p>
-        <p>
-          <input name="icon" placeholder="Icon" />
-        </p>
-        <p>
-          <input name="color" placeholder="Color" defaultValue="#6b7280" />
-        </p>
-        <p>
-          <input name="defaultModel" placeholder="Default model" />
-        </p>
-        <p>
-          <textarea name="instruction" placeholder="Instruction" rows={6} />
-        </p>
-        <button type="submit">Create</button>
+        <input className={styles.input} name="name" placeholder="Name" />
+        <div className={styles.row}>
+          <input className={styles.input} name="slug" placeholder="Slug" />
+          <input className={styles.input} name="icon" placeholder="Icon" />
+        </div>
+        <div className={styles.row}>
+          <input className={styles.input} name="color" placeholder="Color" defaultValue="#6b7280" />
+          <input className={styles.input} name="defaultModel" placeholder="Default model" />
+        </div>
+        <textarea className={styles.textarea} name="instruction" placeholder="Instruction" rows={6} />
+        <button className={styles.button} type="submit">Create</button>
       </form>
     </div>
   )

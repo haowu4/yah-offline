@@ -188,6 +188,21 @@ export class SearchDBClient {
         slug: string
         content: string
     }): ArticleRecord {
+        const existing = this.db
+            .prepare(
+                `
+                SELECT id
+                FROM article
+                WHERE intent_id = ?
+                ORDER BY id ASC
+                LIMIT 1
+                `
+            )
+            .get(args.intentId) as { id: number } | undefined
+        if (existing) {
+            return this.getArticleById(existing.id)
+        }
+
         const title = args.title.trim()
         const content = args.content.trim()
         if (!title || !content) {

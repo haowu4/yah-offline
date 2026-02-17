@@ -45,6 +45,10 @@ export function SearchUI(props: SearchUIProps) {
 
       {isHome ? (
         <div className={styles.home}>
+          <div className={styles.homeHero}>
+            <img src="/logo.png" alt="yah" className={styles.homeLogo} />
+            <h1 className={styles.homeTitle}>yah</h1>
+          </div>
           <form onSubmit={handleSubmit} className={styles.homeForm}>
             <input
               value={input}

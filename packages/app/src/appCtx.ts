@@ -5,6 +5,7 @@ import { AppConfig } from "./config.js"
 import { detectMigrationConflicts, ensureMigrationsTable, runMigrations } from "./db/setup.js"
 import { ConfigClient } from "./db/clients/config.js"
 import { SearchDBClient } from "./db/clients/search.js"
+import { MailDBClient } from "./db/clients/mail.js"
 
 export class AppCtx {
     _db: Database.Database | null
@@ -58,7 +59,8 @@ export class AppCtx {
         const db = this.getDB()
         return {
             config: () => new ConfigClient(db),
-            search: () => new SearchDBClient(db)
+            search: () => new SearchDBClient(db),
+            mail: () => new MailDBClient(db)
         }
     }
 }

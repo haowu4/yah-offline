@@ -41,10 +41,11 @@
 }
 
 .brandText {
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.2px;
+  font-family: "Space Grotesk", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  line-height: 1;
   text-transform: none;
 }
 
@@ -112,49 +113,50 @@
 }
 
 .menuButton {
-  min-width: 104px;
+  min-width: 110px;
   height: 42px;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  border: 2px solid var(--line-strong);
+  gap: 10px;
+  border: 1px solid #d6dae3;
   border-radius: 2px;
-  padding: 7px 14px;
-  background: #fff;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  text-transform: lowercase;
+  padding: 8px 12px;
+  background: #f7f9fc;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  text-transform: none;
   cursor: pointer;
   transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
 }
 
 .menuButton:hover {
-  background: #f8f8f3;
+  background: #f1f5fb;
+  border-color: #c8cfdb;
 }
 
 .menuButtonOpen {
-  border-color: var(--accent);
-  outline: 2px solid rgba(31, 77, 255, 0.16);
-  outline-offset: 0;
+  border-color: #9db0db;
+  background: #eef3ff;
+  color: #173a9a;
 }
 
 .menuChevron {
-  color: var(--muted);
-  font-size: 10px;
+  color: #5a6473;
+  font-size: 11px;
   line-height: 1;
 }
 
 .menu {
   position: absolute;
   right: 0;
-  top: calc(100% + 8px);
-  min-width: 148px;
-  border: 2px solid var(--line-strong);
+  top: calc(100% + 6px);
+  min-width: 156px;
+  border: 1px solid #d6dae3;
   border-radius: 2px;
-  background: var(--surface);
+  background: #fff;
   overflow: hidden;
 }
 
@@ -162,18 +164,19 @@
   display: block;
   width: 100%;
   border: 0;
-  background: var(--surface);
-  padding: 11px 12px;
-  font-size: 14px;
-  color: var(--text);
+  background: #fff;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
   text-align: left;
   cursor: pointer;
-  letter-spacing: 0.15px;
-  text-transform: lowercase;
+  letter-spacing: 0.1px;
+  text-transform: none;
 }
 
 .menuItem:hover {
-  background: #eef1fb;
+  background: #f5f8ff;
 }
 
 .menuItem + .menuItem {
@@ -181,8 +184,8 @@
 }
 
 .menuItemActive {
-  background: #dfe7ff;
-  color: #0f2e9f;
+  background: #edf3ff;
+  color: #173a9a;
   font-weight: 700;
 }
 

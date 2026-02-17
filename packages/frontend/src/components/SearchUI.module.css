@@ -109,8 +109,34 @@
 .home {
   min-height: calc(100vh - 90px);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 14px;
+}
+
+.homeHero {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.homeLogo {
+  width: 62px;
+  height: 62px;
+  object-fit: contain;
+}
+
+.homeTitle {
+  margin: 0;
+  font-family: "Space Grotesk", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  font-size: 42px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+  color: #171717;
 }
 
 .homeForm {
@@ -143,6 +169,22 @@
   border-color: var(--accent);
   outline: 2px solid rgba(31, 77, 255, 0.16);
   outline-offset: 0;
+}
+
+@media (max-width: 720px) {
+  .home {
+    min-height: calc(100vh - 82px);
+    gap: 12px;
+  }
+
+  .homeLogo {
+    width: 52px;
+    height: 52px;
+  }
+
+  .homeTitle {
+    font-size: 34px;
+  }
 }
 
 .grid {
@@ -178,7 +220,8 @@
 }
 
 .articleItem {
-  padding: 10px 0;
+  padding: 12px 0 14px;
+  max-width: 860px;
 }
 
 .articleItem + .articleItem {
@@ -187,24 +230,28 @@
 
 .articleLink {
   display: inline-block;
-  margin-bottom: 5px;
-  font-size: 20px;
-  line-height: 1.2;
-  font-weight: 700;
-  color: #1538b8;
+  margin-bottom: 6px;
+  font-size: 1.32rem;
+  line-height: 1.24;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: #1f4fbf;
+  text-decoration: none;
 }
 
 .articleLink:hover {
   text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 
 .articleSnippet {
   margin: 0;
-  color: #1f1f1f;
-  font-size: 14px;
-  line-height: 1.58;
+  color: #4a4f57;
+  font-size: 0.95rem;
+  line-height: 1.52;
   font-weight: 400;
-  max-width: 78ch;
+  max-width: 84ch;
   min-height: 3em;
   display: -webkit-box;
   -webkit-line-clamp: 3;

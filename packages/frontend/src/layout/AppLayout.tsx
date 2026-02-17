@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import type { FormEvent } from 'react'
 import styles from './AppLayout.module.css'
+import { useMailCtx } from '../ctx/MailCtx'
 
 function getModeFromPath(pathname: string): 'search' | 'mail' {
   if (pathname.startsWith('/mail')) return 'mail'
@@ -12,6 +13,7 @@ export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const mail = useMailCtx()
 
   const mode = getModeFromPath(location.pathname)
   const modeLabel = mode === 'search' ? 'Search' : 'Mail'
@@ -109,7 +111,7 @@ export function AppLayout() {
                   onClick={() => selectMode('mail')}
                   className={`${styles.menuItem} ${mode === 'mail' ? styles.menuItemActive : ''}`}
                 >
-                  <span>Mail</span>
+                  <span>Mail {mail.totalUnreadThreads > 0 ? `(${mail.totalUnreadThreads})` : ''}</span>
                 </button>
               </div>
             ) : null}

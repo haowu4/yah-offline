@@ -3,39 +3,78 @@ import { AppCtx } from "../../appCtx.js"
 import { createSearchLLM } from "../../llm/search.js"
 import { SearchStreamEvent } from "../../type/search.js"
 
+const queryGenerationTasks = new Map<number, Promise<void>>()
+
 function parseQueryId(value: string): number | null {
   const parsed = Number.parseInt(value, 10)
   if (!Number.isInteger(parsed) || parsed <= 0) return null
   return parsed
 }
 
-function toPlainText(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/_([^_]+)_/g, "$1")
-    .replace(/~~([^~]+)~~/g, "$1")
-    .replace(/^\s*>\s?/gm, "")
-}
-
-function toSnippet(content: string): string {
-  const plainText = toPlainText(content)
-  const collapsed = plainText.replace(/\s+/g, " ").trim()
-  if (collapsed.length <= 360) return collapsed
-  return `${collapsed.slice(0, 357)}...`
+async function wait(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function createSearchRouter(ctx: AppCtx) {
   const router = Router()
   const searchDB = ctx.dbClients.search()
   const searchLLM = createSearchLLM(ctx.config.api.apiKey)
+
+  function ensureQueryGeneration(queryId: number, run: () => Promise<void>): Promise<void> {
+    const existingTask = queryGenerationTasks.get(queryId)
+    if (existingTask) return existingTask
+
+    const task = run().finally(() => {
+      const current = queryGenerationTasks.get(queryId)
+      if (current === task) {
+        queryGenerationTasks.delete(queryId)
+      }
+    })
+    queryGenerationTasks.set(queryId, task)
+    return task
+  }
+
+  async function generateMissingContent(args: { queryId: number; queryValue: string }): Promise<void> {
+    const existing = searchDB.getQueryResult(args.queryId)
+    let intentRecords: Array<{ id: number; intent: string }>
+
+    if (existing && existing.intents.length > 0) {
+      intentRecords = existing.intents.map((intent) => ({
+        id: intent.id,
+        intent: intent.intent,
+      }))
+    } else {
+      const intentResult = await searchLLM.getIntent(args.queryValue)
+      const intents = intentResult.intents.length > 0
+        ? intentResult.intents
+        : [{ value: args.queryValue }]
+      intentRecords = intents.map((intentCandidate) =>
+        searchDB.upsertIntent(args.queryId, intentCandidate.value)
+      )
+    }
+
+    for (const intentRecord of intentRecords) {
+      const latest = searchDB.getQueryResult(args.queryId)
+      const latestIntent = latest?.intents.find((intent) => intent.id === intentRecord.id)
+      const existingArticle = latestIntent?.articles[0]
+      if (existingArticle) {
+        continue
+      }
+
+      const articleResult = await searchLLM.createArticle({
+        query: args.queryValue,
+        intent: intentRecord.intent,
+      })
+      const generatedArticle = articleResult.article
+
+      searchDB.createArticle({
+        intentId: intentRecord.id,
+        title: generatedArticle.title,
+        slug: generatedArticle.slug,
+        content: generatedArticle.content,
+      })
+    }
+  }
 
   router.post("/query", (req, res) => {
     const queryValue = typeof req.body?.query === "string" ? req.body.query.trim() : ""
@@ -87,18 +126,29 @@ export function createSearchRouter(ctx: AppCtx) {
 
     try {
       const existing = searchDB.getQueryResult(queryId)
-      if (existing && existing.intents.length > 0) {
-        for (const intent of existing.intents) {
-          sendEvent({
-            type: "intent.created",
-            queryId,
-            intent: {
-              id: intent.id,
-              value: intent.intent,
-            },
-          })
+      const replayed = Boolean(existing && existing.intents.length > 0)
+      const emittedIntentIds = new Set<number>()
+      const emittedArticleIds = new Set<number>()
+      const emitSnapshot = () => {
+        const snapshot = searchDB.getQueryResult(queryId)
+        if (!snapshot) return
+
+        for (const intent of snapshot.intents) {
+          if (!emittedIntentIds.has(intent.id)) {
+            emittedIntentIds.add(intent.id)
+            sendEvent({
+              type: "intent.created",
+              queryId,
+              intent: {
+                id: intent.id,
+                value: intent.intent,
+              },
+            })
+          }
 
           for (const article of intent.articles) {
+            if (emittedArticleIds.has(article.id)) continue
+            emittedArticleIds.add(article.id)
             sendEvent({
               type: "article.created",
               queryId,
@@ -112,66 +162,32 @@ export function createSearchRouter(ctx: AppCtx) {
             })
           }
         }
-
-        sendEvent({
-          type: "query.completed",
-          queryId,
-          replayed: true,
-        })
-        finish()
-        return
       }
 
-      const intentResult = await searchLLM.getIntent(query.value)
-      const intents = intentResult.intents.length > 0
-        ? intentResult.intents
-        : [{ value: query.value }]
-
-      const intentRecords = intents.map((intentCandidate) => searchDB.upsertIntent(queryId, intentCandidate.value))
-
-      for (const intentRecord of intentRecords) {
-        if (isClosed) return
-        sendEvent({
-          type: "intent.created",
+      const generationTask = ensureQueryGeneration(queryId, () =>
+        generateMissingContent({
           queryId,
-          intent: {
-            id: intentRecord.id,
-            value: intentRecord.intent,
-          },
+          queryValue: query.value,
         })
+      )
+
+      while (!isClosed) {
+        emitSnapshot()
+        if (!queryGenerationTasks.has(queryId)) {
+          break
+        }
+        await wait(200)
       }
 
-      for (const intentRecord of intentRecords) {
-        if (isClosed) return
-        const articleResult = await searchLLM.createArticle({
-          query: query.value,
-          intent: intentRecord.intent,
-        })
-        const generatedArticle = articleResult.article
+      if (isClosed) return
 
-        const articleRecord = searchDB.createArticle({
-          intentId: intentRecord.id,
-          title: generatedArticle.title,
-          slug: generatedArticle.slug,
-          content: generatedArticle.content,
-        })
-        sendEvent({
-          type: "article.created",
-          queryId,
-          intentId: intentRecord.id,
-          article: {
-            id: articleRecord.id,
-            title: articleRecord.title,
-            slug: articleRecord.slug,
-            snippet: toSnippet(articleRecord.content),
-          },
-        })
-      }
+      await generationTask
+      emitSnapshot()
 
       sendEvent({
         type: "query.completed",
         queryId,
-        replayed: false,
+        replayed,
       })
       finish()
     } catch (error) {

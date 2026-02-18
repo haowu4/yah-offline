@@ -24,6 +24,20 @@
   color: #b00020;
 }
 
+.success {
+  margin: 0;
+  color: #0b6b2b;
+}
+
+.emptyState {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #fff;
+  color: #4a4f57;
+}
+
 .actions {
   display: flex;
   align-items: center;

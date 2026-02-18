@@ -86,10 +86,27 @@
 }
 
 .rowSender {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.senderDotGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.senderDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
 }
 
 .rowMain {

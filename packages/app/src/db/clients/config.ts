@@ -1,10 +1,20 @@
 import type Database from "better-sqlite3";
 
+export type ConfigItem = {
+    key: string
+    value: string
+    description: string
+}
+
 export class ConfigClient {
     db: Database.Database;
 
     constructor(db: Database.Database) {
         this.db = db;
+    }
+
+    listConfigs(): Promise<ConfigItem[]> {
+        throw new Error('not implemented')
     }
 
     getValue(key: string): string | null {

@@ -392,5 +392,11 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
     res.json({ models: ["gpt-4.1-mini"] })
   })
 
+  router.get("/mail/config/composer", (req, res) => {
+    const defaultContactRaw = configDB.getValue("mail.default_contact")
+    const defaultContact = defaultContactRaw?.trim() || null
+    res.json({ defaultContact })
+  })
+
   return router
 }

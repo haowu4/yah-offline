@@ -39,6 +39,9 @@ export function MailAttachmentListPage() {
         <Link to={`/mail/thread/${threadUid}`}>Back to thread</Link>
       </div>
       {error ? <p className={styles.error}>{error}</p> : null}
+      {!error && attachments.length === 0 ? (
+        <p className={styles.emptyState}>No attachments found for this thread.</p>
+      ) : null}
       <ul className={styles.list}>
         {attachments.map((attachment) => (
           <li key={attachment.id} className={styles.item}>

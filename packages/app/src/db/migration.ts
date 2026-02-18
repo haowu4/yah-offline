@@ -12,7 +12,9 @@ export const migrations: Migration[] = [
         CREATE TABLE IF NOT EXISTS config_value (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key TEXT NOT NULL COLLATE NOCASE UNIQUE,
-            value TEXT NOT NULL
+            value TEXT NOT NULL,
+            type TEXT NOT NULL, 
+            description TEXT
         );
 
         CREATE TABLE IF NOT EXISTS query (

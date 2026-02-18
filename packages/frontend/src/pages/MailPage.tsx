@@ -23,6 +23,25 @@ function getSenderLabel(thread: ApiMailThreadSummary): string {
   return thread.contacts.map((contact) => contact.name).join(', ')
 }
 
+function toInboxSnippet(value: string): string {
+  return value
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function MailPage() {
   const { setBreadcrumbs } = useMailBreadcrumbs()
   const [params, setParams] = useSearchParams()
@@ -125,10 +144,24 @@ export function MailPage() {
               key={thread.threadUid}
               className={`${styles.row} ${thread.unreadCount > 0 ? styles.rowUnread : ''}`}
             >
-              <div className={styles.rowSender}>{getSenderLabel(thread)}</div>
+              <div className={styles.rowSender}>
+                <span className={styles.senderDotGroup}>
+                  {thread.contacts.slice(0, 3).map((contact) => (
+                    <span
+                      key={contact.slug}
+                      className={styles.senderDot}
+                      style={{ background: contact.color }}
+                      title={contact.name}
+                    />
+                  ))}
+                </span>
+                <span>{getSenderLabel(thread)}</span>
+              </div>
               <div className={styles.rowMain}>
                 <span className={styles.rowSubject}>{thread.title || '(untitled thread)'}</span>
-                <span className={styles.rowSnippet}>{thread.lastReplySnippet || 'No messages yet'}</span>
+                <span className={styles.rowSnippet}>
+                  {thread.lastReplySnippet ? toInboxSnippet(thread.lastReplySnippet) : 'No messages yet'}
+                </span>
               </div>
               <div className={styles.rowMeta}>
                 {thread.unreadCount > 0 ? <span className={styles.unreadBadge}>{thread.unreadCount}</span> : null}

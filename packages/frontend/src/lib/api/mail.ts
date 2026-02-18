@@ -265,6 +265,10 @@ export async function listModelCandidates(): Promise<{ models: string[] }> {
   return apiFetch('/mail/config/model-candidates')
 }
 
+export async function getComposerConfig(): Promise<{ defaultContact: string | null }> {
+  return apiFetch('/mail/config/composer')
+}
+
 export function streamMail(args: {
   onEvent: (event: MailStreamEvent) => void
   onError: (error: Error) => void

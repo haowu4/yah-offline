@@ -6,16 +6,32 @@
 
 .header {
   border: 1px solid var(--line);
-  border-radius: 2px 2px 0 0;
-  background: var(--surface);
+  border-radius: 10px;
+  background: #fbfbfb;
   padding: 12px;
-  border-bottom: 0;
+}
+
+.subjectRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .subject {
   margin: 0;
-  font-size: 28px;
+  font-size: 25px;
   line-height: 1.15;
+  letter-spacing: -0.2px;
+}
+
+.threadChip {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #5a5f67;
 }
 
 .toolbar {
@@ -27,40 +43,113 @@
 }
 
 .threadBody {
-  border: 1px solid var(--line);
-  border-radius: 0 0 2px 2px;
-  background: var(--surface);
+  margin-top: 12px;
+  padding: 0;
 }
 
 .messageList {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  gap: 8px;
 }
 
 .messageItem {
-  border-bottom: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.messageItemAssistant {
+  background: #fff;
+}
+
+.messageItemUser {
+  background: #fbfcfd;
+  border-color: #dde3ec;
+}
+
+.messageItemUser .senderAvatar {
+  background: #edf1f6;
+  border-color: #ced6e2;
+}
+
+.messageItemUser .messageRole {
+  color: #27303a;
 }
 
 .messageHeader {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 8px;
+  font-size: 12px;
+  color: #5b616b;
+}
+
+.sender {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
-  font-size: 13px;
-  color: #4a4f57;
+  gap: 10px;
+}
+
+.senderAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #f7f8fa;
+  color: #2f3640;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.senderMeta {
+  display: grid;
+  gap: 1px;
 }
 
 .messageRole {
   font-weight: 700;
-  color: var(--text);
-  text-transform: capitalize;
+  color: #202020;
+}
+
+.senderSub {
+  color: #666d77;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contactDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #9ca3af;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+.headerRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time {
+  color: #727982;
 }
 
 .badge {
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   font-size: 11px;
   background: #fff;
 }
@@ -73,20 +162,37 @@
 }
 
 .messageContent {
-  padding: 0 12px 12px;
+  padding: 0 12px 10px;
+}
+
+.messageContent :global(p:first-child) {
+  margin-top: 0;
+}
+
+.messageContent :global(p:last-child) {
+  margin-bottom: 0;
+}
+
+.messageContent :global(pre) {
+  margin: 10px 0;
+}
+
+.messageContent :global(blockquote) {
+  margin: 10px 0;
 }
 
 .metaLink {
-  padding: 0 12px 12px;
-  font-size: 13px;
+  padding: 8px 12px 10px;
+  font-size: 12px;
+  color: #5b616b;
 }
 
 .composer {
-  margin-top: 14px;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--surface);
-  padding: 12px;
+  margin-top: 12px;
+  border: 1px solid #d9dde5;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px;
 }
 
 .composerTitle {
@@ -110,12 +216,12 @@
 .textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 2px solid var(--line-strong);
-  border-radius: 2px;
+  border: 1px solid #cfd5de;
+  border-radius: 8px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text);
-  background: var(--surface);
+  background: #fff;
 }
 
 .textarea {
@@ -127,7 +233,7 @@
 .select:focus,
 .textarea:focus {
   border-color: var(--accent);
-  outline: 2px solid rgba(31, 77, 255, 0.16);
+  outline: 2px solid rgba(31, 77, 255, 0.14);
 }
 
 .actions {
@@ -136,8 +242,8 @@
 }
 
 .button {
-  border: 2px solid var(--line-strong);
-  border-radius: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
   background: var(--line-strong);
   color: #fff;
   padding: 10px 14px;
@@ -147,13 +253,13 @@
 }
 
 .buttonSecondary {
-  border: 2px solid var(--line-strong);
-  border-radius: 2px;
+  border: 1px solid #c2c7d0;
+  border-radius: 8px;
   background: transparent;
   color: var(--text);
   padding: 10px 14px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 

@@ -11,6 +11,8 @@ export function MailContactDetailPage() {
   const { setBreadcrumbs } = useMailBreadcrumbs()
   const [contact, setContact] = useState<ApiMailContact | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [saveNotice, setSaveNotice] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [color, setColor] = useState('#6b7280')
 
   const slug = params.slug ?? ''
@@ -30,6 +32,8 @@ export function MailContactDetailPage() {
         setContact(payload.contact)
         setColor(payload.contact.color || '#6b7280')
         setError(null)
+        setSaveNotice(null)
+        setSaveError(null)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Failed to load contact')
@@ -51,6 +55,8 @@ export function MailContactDetailPage() {
           className={styles.formGrid}
           onSubmit={(event) => {
             event.preventDefault()
+            setSaveNotice(null)
+            setSaveError(null)
             const form = new FormData(event.currentTarget)
             void updateContact(slug, {
               name: String(form.get('name') ?? '').trim() || undefined,
@@ -63,9 +69,10 @@ export function MailContactDetailPage() {
               .then((payload) => {
                 setContact(payload.contact)
                 setError(null)
+                setSaveNotice('Saved successfully.')
               })
               .catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : 'Failed to update contact')
+                setSaveError(err instanceof Error ? err.message : 'Failed to update contact')
               })
           }}
         >
@@ -128,6 +135,8 @@ export function MailContactDetailPage() {
             />
           </div>
           <button className={styles.button} type="submit">Save</button>
+          {saveNotice ? <p className={styles.success}>{saveNotice}</p> : null}
+          {saveError ? <p className={styles.error}>{saveError}</p> : null}
         </form>
       ) : null}
     </div>

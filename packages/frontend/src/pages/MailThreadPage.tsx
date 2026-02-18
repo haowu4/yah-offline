@@ -1,9 +1,10 @@
 import { MarkdownPreview } from '@ootc/markdown'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import {
   createReply,
   createThread,
+  getComposerConfig,
   getThread,
   listContacts,
   listModelCandidates,
@@ -13,6 +14,35 @@ import type { ApiMailContact, ApiMailReply } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailThreadPage.module.css'
 
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const normalized = hex.trim().replace('#', '')
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16),
+  }
+}
+
+function colorTone(hex: string, alpha: number): string {
+  const rgb = hexToRgb(hex)
+  if (!rgb) return 'rgba(120, 120, 120, 0.14)'
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+}
+
+function resolveContactSlug(input: string, contacts: ApiMailContact[]): string | undefined | null {
+  const normalized = input.trim()
+  if (!normalized) return undefined
+
+  const slugMatch = contacts.find((contact) => contact.slug === normalized)
+  if (slugMatch) return slugMatch.slug
+
+  const exactNameMatches = contacts.filter((contact) => contact.name.toLowerCase() === normalized.toLowerCase())
+  if (exactNameMatches.length === 1) return exactNameMatches[0].slug
+
+  return null
+}
+
 export function MailThreadPage() {
   const params = useParams()
   const { setBreadcrumbs } = useMailBreadcrumbs()
@@ -21,13 +51,27 @@ export function MailThreadPage() {
   const [replies, setReplies] = useState<ApiMailReply[]>([])
   const [contacts, setContacts] = useState<ApiMailContact[]>([])
   const [models, setModels] = useState<string[]>([])
+  const [contactInput, setContactInput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const autoReadThreadUidRef = useRef<string | null>(null)
 
   const threadUid = params.threadId ?? null
 
   useEffect(() => {
-    void listContacts().then((payload) => setContacts(payload.contacts))
-    void listModelCandidates().then((payload) => setModels(payload.models))
+    void Promise.all([listContacts(), listModelCandidates(), getComposerConfig()])
+      .then(([contactsPayload, modelsPayload, composerPayload]) => {
+        setContacts(contactsPayload.contacts)
+        setModels(modelsPayload.models)
+        if (composerPayload.defaultContact && !contactInput.trim()) {
+          const matched = contactsPayload.contacts.find(
+            (contact) => contact.slug === composerPayload.defaultContact
+          )
+          setContactInput(matched ? matched.name : composerPayload.defaultContact)
+        }
+      })
+      .catch(() => {
+        // keep composer usable even if config fetch fails
+      })
   }, [])
 
   useEffect(() => {
@@ -35,6 +79,7 @@ export function MailThreadPage() {
       setThreadUidState(null)
       setThreadTitle('')
       setReplies([])
+      autoReadThreadUidRef.current = null
       return
     }
 
@@ -67,12 +112,31 @@ export function MailThreadPage() {
     ])
   }, [effectiveThreadUid, setBreadcrumbs, threadTitle])
 
+  useEffect(() => {
+    if (!effectiveThreadUid) return
+    if (autoReadThreadUidRef.current === effectiveThreadUid) return
+    if (!replies.some((reply) => reply.unread)) return
+
+    autoReadThreadUidRef.current = effectiveThreadUid
+    void markThreadRead(effectiveThreadUid)
+      .then(() => {
+        setReplies((current) => current.map((reply) => ({ ...reply, unread: false })))
+      })
+      .catch(() => {
+        autoReadThreadUidRef.current = null
+      })
+  }, [effectiveThreadUid, replies])
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.subject}>{threadTitle || 'New thread'}</h1>
+        <div className={styles.subjectRow}>
+          <h1 className={styles.subject}>{threadTitle || 'New thread'}</h1>
+          <span className={styles.threadChip}>
+            {replies.filter((reply) => reply.role === 'assistant').length} assistant replies
+          </span>
+        </div>
         <div className={styles.toolbar}>
-          <Link to="/mail">Back to inbox</Link>
           {effectiveThreadUid ? <Link to={`/mail/thread/${effectiveThreadUid}/attachment`}>Attachments</Link> : null}
         </div>
       </header>
@@ -80,18 +144,52 @@ export function MailThreadPage() {
       <section className={styles.threadBody}>
         <ul className={styles.messageList}>
           {replies.map((reply) => (
-            <li key={reply.id} className={styles.messageItem}>
+            <li
+              key={reply.id}
+              className={`${styles.messageItem} ${reply.role === 'assistant' ? styles.messageItemAssistant : styles.messageItemUser}`}
+            >
               <div className={styles.messageHeader}>
-                <span className={styles.messageRole}>{reply.role}</span>
-                {reply.contact ? <span className={styles.badge}>{reply.contact.name}</span> : null}
-                {reply.unread ? <span className={`${styles.badge} ${styles.unread}`}>Unread</span> : null}
-                <span>{new Date(reply.createdAt).toLocaleString()}</span>
+                <div className={styles.sender}>
+                  <span
+                    className={styles.senderAvatar}
+                    style={
+                      reply.role === 'assistant' && reply.contact?.color
+                        ? {
+                            borderColor: colorTone(reply.contact.color, 0.5),
+                            background: colorTone(reply.contact.color, 0.18),
+                          }
+                        : undefined
+                    }
+                  >
+                    {reply.role === 'assistant' ? 'A' : 'U'}
+                  </span>
+                  <div className={styles.senderMeta}>
+                    <span className={styles.messageRole}>{reply.role === 'assistant' ? 'Assistant' : 'You'}</span>
+                    {reply.contact ? (
+                      <span className={styles.senderSub}>
+                        <span
+                          className={styles.contactDot}
+                          style={
+                            reply.role === 'assistant' && reply.contact?.color
+                              ? { background: reply.contact.color }
+                              : undefined
+                          }
+                        />
+                        {reply.contact.name}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className={styles.headerRight}>
+                  {reply.unread ? <span className={`${styles.badge} ${styles.unread}`}>Unread</span> : null}
+                  <span className={styles.time}>{new Date(reply.createdAt).toLocaleString()}</span>
+                </div>
               </div>
               <div className={styles.messageContent}>
                 <MarkdownPreview content={reply.content} />
               </div>
               <div className={styles.metaLink}>
-                <Link to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}`}>Open reply detail</Link>
+                <Link to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}`}>View full reply</Link>
               </div>
             </li>
           ))}
@@ -100,7 +198,7 @@ export function MailThreadPage() {
       </section>
 
       <section className={styles.composer}>
-        <h2 className={styles.composerTitle}>Compose Reply</h2>
+        <h2 className={styles.composerTitle}>Reply</h2>
         <form
           className={styles.formGrid}
           onSubmit={(event) => {
@@ -108,11 +206,16 @@ export function MailThreadPage() {
             const form = new FormData(event.currentTarget)
             const content = String(form.get('content') ?? '').trim()
             const title = String(form.get('title') ?? '').trim()
-            const contactSlug = String(form.get('contactSlug') ?? '').trim()
+            const contactSlug = resolveContactSlug(contactInput, contacts)
             const model = String(form.get('model') ?? '').trim()
 
             if (!content) {
               setError('content is required')
+              return
+            }
+
+            if (contactSlug === null) {
+              setError('contact not found')
               return
             }
 
@@ -149,14 +252,21 @@ export function MailThreadPage() {
             <input className={styles.input} name="title" placeholder="Thread title (optional)" />
           ) : null}
           <div className={styles.row}>
-            <select className={styles.select} name="contactSlug" defaultValue="">
-              <option value="">No contact</option>
-              {contacts.map((contact) => (
-                <option key={contact.id} value={contact.slug}>
-                  {contact.name}
-                </option>
-              ))}
-            </select>
+            <>
+              <input
+                className={styles.input}
+                name="contact"
+                list="mail-contacts"
+                placeholder="Contact (name or slug)"
+                value={contactInput}
+                onChange={(event) => setContactInput(event.target.value)}
+              />
+              <datalist id="mail-contacts">
+                {contacts.map((contact) => (
+                  <option key={contact.id} value={contact.name} label={contact.slug} />
+                ))}
+              </datalist>
+            </>
             <>
               <input className={styles.input} name="model" list="mail-models" placeholder="Model" />
               <datalist id="mail-models">

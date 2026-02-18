@@ -1,26 +1,29 @@
 import os from "os";
 import path from "path";
 
-/**
- * Returns a platform-specific app data directory.
- * 
- * @param appName - Optional application folder name
- * */
-export function getAppDataPath(appName?: string): string {
+export function getAppDataPath(): string {
+
+    const appName = 'yah'
+
     const platform = process.platform;
     const homeDir = os.homedir();
 
     let basePath: string;
 
-    if (platform === "win32") {
-        basePath = process.env.APPDATA || path.join(homeDir, "AppData", "Roaming");
-    } else if (platform === "darwin") {
-        basePath = path.join(homeDir, "Library", "Application Support");
+    if (process.env.YAH_BASE_FOLDER) {
+        basePath = process.env.YAH_BASE_FOLDER
     } else {
-        // linux + everything else
-        basePath =
-            process.env.XDG_DATA_HOME || path.join(homeDir, ".local", "share");
+        if (platform === "win32") {
+            basePath = process.env.APPDATA || path.join(homeDir, "AppData", "Roaming");
+        } else if (platform === "darwin") {
+            basePath = path.join(homeDir, "Library", "Application Support");
+        } else {
+            // linux + everything else
+            basePath =
+                process.env.XDG_DATA_HOME || path.join(homeDir, ".local", "share");
+        }
     }
 
-    return appName ? path.join(basePath, appName) : basePath;
+
+    return path.join(basePath, appName)
 }

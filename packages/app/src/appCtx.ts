@@ -2,7 +2,7 @@ import Database from "better-sqlite3"
 import fs from "node:fs"
 import path from "node:path"
 import { AppConfig } from "./config.js"
-import { detectMigrationConflicts, ensureMigrationsTable, runMigrations } from "./db/setup.js"
+import { addDefaultConfigs, detectMigrationConflicts, ensureMigrationsTable, runMigrations } from "./db/setup.js"
 import { ConfigClient } from "./db/clients/config.js"
 import { SearchDBClient } from "./db/clients/search.js"
 import { MailDBClient } from "./db/clients/mail.js"
@@ -52,6 +52,7 @@ export class AppCtx {
             }
         }
         runMigrations(this._db)
+        addDefaultConfigs(this._db)
         return this._db
     }
 

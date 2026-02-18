@@ -3,8 +3,11 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import type { FormEvent } from 'react'
 import styles from './AppLayout.module.css'
 
-function getModeFromPath(pathname: string): 'search' | 'mail' {
+type AppMode = 'search' | 'mail' | 'config'
+
+function getModeFromPath(pathname: string): AppMode {
   if (pathname.startsWith('/mail')) return 'mail'
+  if (pathname.startsWith('/config')) return 'config'
   return 'search'
 }
 
@@ -15,9 +18,9 @@ export function AppLayout() {
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   const mode = getModeFromPath(location.pathname)
-  const modeLabel = mode === 'search' ? 'Search' : 'Mail'
+  const modeLabel = mode === 'search' ? 'Search' : mode === 'mail' ? 'Mail' : 'Config'
   const modeOptions: Array<{
-    id: 'search' | 'mail'
+    id: AppMode
     label: string
   }> = [
     {
@@ -27,6 +30,10 @@ export function AppLayout() {
     {
       id: 'mail',
       label: 'Mail',
+    },
+    {
+      id: 'config',
+      label: 'Config',
     },
   ]
 
@@ -44,7 +51,7 @@ export function AppLayout() {
     return ''
   })()
   const shouldShowNavSearch =
-    !(location.pathname === '/search' && currentSearchInput.trim() === '')
+    mode !== 'config' && !(location.pathname === '/search' && currentSearchInput.trim() === '')
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -74,7 +81,7 @@ export function AppLayout() {
     navigate(`/search?query=${encodeURIComponent(query)}`)
   }
 
-  const selectMode = (target: 'search' | 'mail') => {
+  const selectMode = (target: AppMode) => {
     if (target === mode) {
       setIsMenuOpen(false)
       return
@@ -86,14 +93,21 @@ export function AppLayout() {
       return
     }
 
+    if (target === 'config') {
+      navigate('/config')
+      return
+    }
+
     navigate('/mail')
   }
+
+  const brandTo = mode === 'mail' ? '/mail' : mode === 'config' ? '/config' : '/search'
 
   return (
     <div className={styles.appShell}>
       <header className={styles.header}>
         <div className={styles.inner}>
-          <Link to={mode === 'mail' ? '/mail' : '/search'} className={styles.brandLink}>
+          <Link to={brandTo} className={styles.brandLink}>
             <img src="/logo.png" alt="yah" className={styles.brandLogo} />
             <strong className={styles.brandText}>yah</strong>
           </Link>

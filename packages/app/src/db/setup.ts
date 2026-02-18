@@ -1,6 +1,7 @@
 import Database from "better-sqlite3"
 import { createHash } from "node:crypto"
 import { migrations } from "./migration.js"
+import { DefaultConfigs } from "./configs.js"
 
 type MigrationConflict = {
     name: string
@@ -10,6 +11,16 @@ type MigrationConflict = {
 
 function getMigrationChecksum(sql: string): string {
     return createHash("sha256").update(sql).digest("hex")
+}
+/**
+ * add default config into the db. skip any key that is already there.
+ * 
+ * the default config entries is defined in `import { DefaultConfigs } from "./configs.js"`
+ * 
+ * @param db 
+ */
+export function addDefaultConfigs(db: Database.Database) {
+
 }
 
 export function ensureMigrationsTable(db: Database.Database) {

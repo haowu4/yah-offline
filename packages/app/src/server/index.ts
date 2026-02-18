@@ -11,7 +11,7 @@ export function createServer(appCtx: AppCtx) {
     const mailEventHub = new MailEventHub(appCtx)
 
     if (appCtx.config.server.enableConfigRoutes) {
-        app.use("/api", createConfigRouter(appCtx))
+        app.use("/api/config", createConfigRouter(appCtx))
     }
 
     app.use("/api", createSearchRouter(appCtx))

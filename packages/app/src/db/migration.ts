@@ -13,7 +13,6 @@ export const migrations: Migration[] = [
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key TEXT NOT NULL COLLATE NOCASE UNIQUE,
             value TEXT NOT NULL,
-            type TEXT NOT NULL, 
             description TEXT
         );
 

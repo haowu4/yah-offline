@@ -10,6 +10,7 @@ import { MailThreadPage } from "./pages/MailThreadPage";
 import { MailAttachmentListPage } from "./pages/MailAttachmentListPage";
 import { MailReplyPage } from "./pages/MailReplyPage";
 import { MailAttachmentViewPage } from "./pages/MailAttachmentViewPage";
+import { ConfigPage } from "./pages/ConfigPage";
 import { MailLayout } from "./layout/MailLayout";
 import styles from "./routes.module.css";
 
@@ -20,6 +21,7 @@ export function AppRoutes() {
                 <Route element={<AppLayout />}>
                     <Route path="/" element={<Navigate to="/search" replace />} />
                     <Route path="/search" element={<SearchPage />} />
+                    <Route path="/config" element={<ConfigPage />} />
                     <Route path="/content/:slug" element={<ArticlePage />} />
                     <Route path="/mail" element={<MailLayout />}>
                         <Route index element={<MailPage />} />

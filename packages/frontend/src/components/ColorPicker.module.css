@@ -1,0 +1,52 @@
+.root {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 2px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.root:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid rgba(31, 77, 255, 0.16);
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+}
+
+.swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.swatch::-webkit-color-swatch {
+  border: 0;
+  border-radius: 1px;
+}
+
+.value {
+  border: 0;
+  outline: none;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.value::placeholder {
+  color: var(--muted);
+  font-weight: 500;
+}

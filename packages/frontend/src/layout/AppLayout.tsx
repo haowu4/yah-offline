@@ -1,8 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import type { FormEvent } from 'react'
 import styles from './AppLayout.module.css'
-import { useMailCtx } from '../ctx/MailCtx'
 
 function getModeFromPath(pathname: string): 'search' | 'mail' {
   if (pathname.startsWith('/mail')) return 'mail'
@@ -13,10 +12,23 @@ export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const mail = useMailCtx()
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
   const mode = getModeFromPath(location.pathname)
   const modeLabel = mode === 'search' ? 'Search' : 'Mail'
+  const modeOptions: Array<{
+    id: 'search' | 'mail'
+    label: string
+  }> = [
+    {
+      id: 'search',
+      label: 'Search',
+    },
+    {
+      id: 'mail',
+      label: 'Mail',
+    },
+  ]
 
   const currentSearchInput = (() => {
     if (location.pathname === '/search') {
@@ -33,6 +45,22 @@ export function AppLayout() {
   })()
   const shouldShowNavSearch =
     !(location.pathname === '/search' && currentSearchInput.trim() === '')
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (menuRef.current?.contains(target)) return
+      setIsMenuOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+    }
+  }, [isMenuOpen])
 
   const handleSearchSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -65,7 +93,7 @@ export function AppLayout() {
     <div className={styles.appShell}>
       <header className={styles.header}>
         <div className={styles.inner}>
-          <Link to="/" className={styles.brandLink}>
+          <Link to={mode === 'mail' ? '/mail' : '/search'} className={styles.brandLink}>
             <img src="/logo.png" alt="yah" className={styles.brandLogo} />
             <strong className={styles.brandText}>yah</strong>
           </Link>
@@ -87,32 +115,44 @@ export function AppLayout() {
 
           <div className={styles.spacer} />
 
-          <div className={styles.menuWrap}>
+          <div className={styles.menuWrap} ref={menuRef}>
             <button
               type="button"
               onClick={() => setIsMenuOpen((current) => !current)}
+              aria-haspopup="menu"
+              aria-expanded={isMenuOpen}
               className={`${styles.menuButton} ${isMenuOpen ? styles.menuButtonOpen : ''}`}
             >
-              <span>{modeLabel}</span>
+              <span className={styles.menuButtonText}>
+                <small className={styles.menuButtonCaption}>App</small>
+                <strong className={styles.menuButtonValue}>{modeLabel}</strong>
+              </span>
               <span className={styles.menuChevron}>{isMenuOpen ? '▴' : '▾'}</span>
             </button>
 
             {isMenuOpen ? (
-              <div className={styles.menu}>
-                <button
-                  type="button"
-                  onClick={() => selectMode('search')}
-                  className={`${styles.menuItem} ${mode === 'search' ? styles.menuItemActive : ''}`}
-                >
-                  <span>Search</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => selectMode('mail')}
-                  className={`${styles.menuItem} ${mode === 'mail' ? styles.menuItemActive : ''}`}
-                >
-                  <span>Mail {mail.totalUnreadThreads > 0 ? `(${mail.totalUnreadThreads})` : ''}</span>
-                </button>
+              <div className={styles.menu} role="menu" aria-label="App selection">
+                <p className={styles.menuTitle}>App</p>
+                {modeOptions.map((option) => {
+                  const isActive = mode === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => selectMode(option.id)}
+                      className={`${styles.menuItem} ${isActive ? styles.menuItemActive : ''}`}
+                      role="menuitemradio"
+                      aria-checked={isActive}
+                    >
+                      <span className={styles.menuItemText}>
+                        <span className={styles.menuItemLabel}>{option.label}</span>
+                      </span>
+                      <span className={styles.menuItemMeta}>
+                        <span className={`${styles.menuCheck} ${isActive ? styles.menuCheckVisible : ''}`}>✓</span>
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             ) : null}
           </div>

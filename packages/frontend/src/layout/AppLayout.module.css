@@ -113,19 +113,19 @@
 }
 
 .menuButton {
-  min-width: 110px;
+  min-width: 144px;
   height: 42px;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid #d6dae3;
+  border: 1px solid #d6d6d0;
   border-radius: 2px;
   padding: 8px 12px;
-  background: #f7f9fc;
-  color: #1f2937;
+  background: #fff;
+  color: #202020;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.1px;
   text-transform: none;
   cursor: pointer;
@@ -133,18 +133,39 @@
 }
 
 .menuButton:hover {
-  background: #f1f5fb;
-  border-color: #c8cfdb;
+  background: #fafafa;
+  border-color: #bcbcbc;
 }
 
 .menuButtonOpen {
-  border-color: #9db0db;
-  background: #eef3ff;
-  color: #173a9a;
+  border-color: #171717;
+  background: #fff;
+  color: #171717;
+}
+
+.menuButtonText {
+  display: grid;
+  align-items: center;
+  justify-items: start;
+  line-height: 1;
+  gap: 2px;
+}
+
+.menuButtonCaption {
+  font-size: 10px;
+  letter-spacing: 0.28px;
+  text-transform: uppercase;
+  color: #737373;
+}
+
+.menuButtonValue {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1px;
 }
 
 .menuChevron {
-  color: #5a6473;
+  color: #666;
   font-size: 11px;
   line-height: 1;
 }
@@ -153,19 +174,33 @@
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  min-width: 156px;
-  border: 1px solid #d6dae3;
+  min-width: 260px;
+  border: 1px solid #d6d6d0;
   border-radius: 2px;
   background: #fff;
   overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+}
+
+.menuTitle {
+  margin: 0;
+  padding: 9px 12px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24px;
+  text-transform: uppercase;
+  color: #6d6d6d;
 }
 
 .menuItem {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
   border: 0;
   background: #fff;
-  padding: 10px 12px;
+  padding: 10px 12px 11px;
   font-size: 13px;
   font-weight: 500;
   color: #1f2937;
@@ -173,10 +208,11 @@
   cursor: pointer;
   letter-spacing: 0.1px;
   text-transform: none;
+  gap: 14px;
 }
 
 .menuItem:hover {
-  background: #f5f8ff;
+  background: #f6f7f8;
 }
 
 .menuItem + .menuItem {
@@ -184,9 +220,44 @@
 }
 
 .menuItemActive {
-  background: #edf3ff;
-  color: #173a9a;
+  background: #f8f8f8;
+}
+
+.menuItemText {
+  display: inline-flex;
+  align-items: center;
+}
+
+.menuItemLabel {
+  font-size: 13px;
   font-weight: 700;
+  color: #202020;
+}
+
+.menuItemMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menuMetaBadge {
+  font-style: normal;
+  font-size: 11px;
+  color: #7c3a00;
+  background: #ffedd5;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.menuCheck {
+  font-size: 13px;
+  color: #ea8a00;
+  opacity: 0;
+}
+
+.menuCheckVisible {
+  opacity: 1;
 }
 
 .main {

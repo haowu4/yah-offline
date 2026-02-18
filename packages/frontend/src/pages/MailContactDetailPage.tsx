@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import { getContact, updateContact } from '../lib/api/mail'
 import type { ApiMailContact } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
+import { ColorPicker } from '../components/ColorPicker'
 import styles from './MailCommon.module.css'
 
 export function MailContactDetailPage() {
@@ -10,6 +11,7 @@ export function MailContactDetailPage() {
   const { setBreadcrumbs } = useMailBreadcrumbs()
   const [contact, setContact] = useState<ApiMailContact | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [color, setColor] = useState('#6b7280')
 
   const slug = params.slug ?? ''
 
@@ -26,6 +28,7 @@ export function MailContactDetailPage() {
     void getContact(slug)
       .then((payload) => {
         setContact(payload.contact)
+        setColor(payload.contact.color || '#6b7280')
         setError(null)
       })
       .catch((err: unknown) => {
@@ -54,7 +57,7 @@ export function MailContactDetailPage() {
               slug: String(form.get('slug') ?? '').trim() || undefined,
               instruction: String(form.get('instruction') ?? '').trim() || undefined,
               icon: String(form.get('icon') ?? '').trim() || undefined,
-              color: String(form.get('color') ?? '').trim() || undefined,
+              color,
               defaultModel: String(form.get('defaultModel') ?? '').trim() || undefined,
             })
               .then((payload) => {
@@ -66,21 +69,64 @@ export function MailContactDetailPage() {
               })
           }}
         >
-          <input className={styles.input} name="name" defaultValue={contact.name} placeholder="Name" />
-          <div className={styles.row}>
-            <input className={styles.input} name="slug" defaultValue={contact.slug} placeholder="Slug" />
-            <input className={styles.input} name="icon" defaultValue={contact.icon} placeholder="Icon" />
-          </div>
-          <div className={styles.row}>
-            <input className={styles.input} name="color" defaultValue={contact.color} placeholder="Color" />
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="edit-contact-name">Name</label>
             <input
+              id="edit-contact-name"
               className={styles.input}
-              name="defaultModel"
-              defaultValue={contact.defaultModel ?? ''}
-              placeholder="Default model"
+              name="name"
+              defaultValue={contact.name}
+              placeholder="Name"
             />
           </div>
-          <textarea className={styles.textarea} name="instruction" defaultValue={contact.instruction} rows={6} />
+          <div className={styles.row}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="edit-contact-slug">Slug</label>
+              <input
+                id="edit-contact-slug"
+                className={styles.input}
+                name="slug"
+                defaultValue={contact.slug}
+                placeholder="Slug"
+              />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="edit-contact-icon">Icon</label>
+              <input
+                id="edit-contact-icon"
+                className={styles.input}
+                name="icon"
+                defaultValue={contact.icon}
+                placeholder="Icon"
+              />
+            </div>
+          </div>
+          <div className={styles.row}>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="edit-contact-color">Color</label>
+              <ColorPicker id="edit-contact-color" name="color" value={color} onChange={setColor} />
+            </div>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="edit-contact-default-model">Default Model</label>
+              <input
+                id="edit-contact-default-model"
+                className={styles.input}
+                name="defaultModel"
+                defaultValue={contact.defaultModel ?? ''}
+                placeholder="Default model"
+              />
+            </div>
+          </div>
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="edit-contact-instruction">Instruction</label>
+            <textarea
+              id="edit-contact-instruction"
+              className={styles.textarea}
+              name="instruction"
+              defaultValue={contact.instruction}
+              rows={6}
+            />
+          </div>
           <button className={styles.button} type="submit">Save</button>
         </form>
       ) : null}

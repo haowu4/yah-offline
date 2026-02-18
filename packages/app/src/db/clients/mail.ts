@@ -61,6 +61,29 @@ export class MailDBClient {
     this.db = db
   }
 
+  private toPlainText(markdown: string): string {
+    return markdown
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+      .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/^\s*[-*+]\s+/gm, "")
+      .replace(/^\s*\d+\.\s+/gm, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/_([^_]+)_/g, "$1")
+      .replace(/~~([^~]+)~~/g, "$1")
+      .replace(/^\s*>\s?/gm, "")
+  }
+
+  private toSnippet(content: string): string {
+    const plainText = this.toPlainText(content)
+    const collapsed = plainText.replace(/\s+/g, " ").trim()
+    if (collapsed.length <= 220) return collapsed
+    return `${collapsed.slice(0, 217)}...`
+  }
+
   private getUniqueContactSlug(base: string, excludeId?: number): string {
     const normalizedBase = slugify(base)
     let candidate = normalizedBase
@@ -900,12 +923,12 @@ export class MailDBClient {
               LIMIT 1
             ) AS last_reply_at,
             (
-              SELECT substr(trim(replace(replace(r.content, '\n', ' '), '\r', ' ')), 1, 220)
+              SELECT r.content
               FROM mail_reply r
               WHERE r.thread_id = t.id
               ORDER BY r.id DESC
               LIMIT 1
-            ) AS last_reply_snippet
+            ) AS last_reply_content
           FROM mail_thread t
           ${whereSql}
           ORDER BY t.updated_at DESC, t.id DESC
@@ -919,7 +942,7 @@ export class MailDBClient {
       updated_at: string
       unread_count: number
       last_reply_at: string | null
-      last_reply_snippet: string | null
+      last_reply_content: string | null
     }>
 
     return rows.map((row) => {
@@ -942,7 +965,7 @@ export class MailDBClient {
         updatedAt: row.updated_at,
         unreadCount: row.unread_count,
         lastReplyAt: row.last_reply_at,
-        lastReplySnippet: row.last_reply_snippet,
+        lastReplySnippet: row.last_reply_content ? this.toSnippet(row.last_reply_content) : null,
         contacts,
       }
     })

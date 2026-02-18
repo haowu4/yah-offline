@@ -33,9 +33,11 @@ export function MailContactListPage() {
       <h1 className={styles.title}>Contacts</h1>
       <div className={styles.actions}>
         <Link to="/mail/new-contact">Create contact</Link>
-        <Link to="/mail">Back to threads</Link>
       </div>
       {error ? <p className={styles.error}>{error}</p> : null}
+      {!error && contacts.length === 0 ? (
+        <p className={styles.statusLine}>No contacts found. Create your first contact to use personas in mail threads.</p>
+      ) : null}
       <ul className={styles.list}>
         {contacts.map((contact) => (
           <li key={contact.id} className={styles.item}>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { listThreads } from '../lib/api/mail'
 import type { ApiMailThreadSummary } from '../lib/api/mail'
@@ -71,33 +71,7 @@ export function MailPage() {
     }
   }, [contact, from, keyword, to, unread])
 
-  const unreadCount = useMemo(
-    () => state.threads.reduce((sum, thread) => sum + thread.unreadCount, 0),
-    [state.threads]
-  )
-
   return (
-    <div className={styles.page}>
-      <aside className={styles.sidebar}>
-        <Link to="/mail/thread/new" className={styles.composeButton}>
-          Compose
-        </Link>
-        <nav className={styles.navList}>
-          <Link className={`${styles.navItem} ${!unread ? styles.navItemActive : ''}`} to="/mail">
-            Inbox
-          </Link>
-          <Link className={`${styles.navItem} ${unread ? styles.navItemActive : ''}`} to="/mail?unread=1">
-            Unread ({unreadCount})
-          </Link>
-          <Link className={styles.navItem} to="/mail/contact">
-            Contacts
-          </Link>
-          <Link className={styles.navItem} to="/mail/new-contact">
-            New Contact
-          </Link>
-        </nav>
-      </aside>
-
       <section className={styles.content}>
         <header className={styles.header}>
           <h1 className={styles.title}>Mail</h1>
@@ -167,6 +141,5 @@ export function MailPage() {
           ) : null}
         </div>
       </section>
-    </div>
   )
 }

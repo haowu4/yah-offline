@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { getAttachment } from '../lib/api/mail'
+import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailCommon.module.css'
 
 type AttachmentPayload = {
@@ -16,12 +17,22 @@ type AttachmentPayload = {
 
 export function MailAttachmentViewPage() {
   const params = useParams()
+  const { setBreadcrumbs } = useMailBreadcrumbs()
   const threadUid = params.threadId ?? ''
   const replyId = Number.parseInt(params.replyId ?? '', 10)
   const attachmentSlug = params.attachmentSlug ?? ''
 
   const [attachment, setAttachment] = useState<AttachmentPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setBreadcrumbs([
+      { label: 'Mail', to: '/mail' },
+      { label: `Thread ${threadUid.slice(0, 8)}`, to: `/mail/thread/${threadUid}` },
+      { label: `Reply #${Number.isInteger(replyId) ? replyId : ''}`, to: `/mail/thread/${threadUid}/reply/${replyId}` },
+      { label: attachment?.filename || attachmentSlug || 'Attachment' },
+    ])
+  }, [attachment?.filename, attachmentSlug, replyId, setBreadcrumbs, threadUid])
 
   useEffect(() => {
     if (!threadUid || !Number.isInteger(replyId) || !attachmentSlug) return

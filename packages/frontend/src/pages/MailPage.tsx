@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { listThreads } from '../lib/api/mail'
 import type { ApiMailThreadSummary } from '../lib/api/mail'
+import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailPage.module.css'
 
 type LoadState = {
@@ -10,7 +11,20 @@ type LoadState = {
   threads: ApiMailThreadSummary[]
 }
 
+function formatDate(value: string | null): string {
+  if (!value) return '-'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString()
+}
+
+function getSenderLabel(thread: ApiMailThreadSummary): string {
+  if (thread.contacts.length === 0) return 'No contact'
+  return thread.contacts.map((contact) => contact.name).join(', ')
+}
+
 export function MailPage() {
+  const { setBreadcrumbs } = useMailBreadcrumbs()
   const [params, setParams] = useSearchParams()
   const [state, setState] = useState<LoadState>({
     isLoading: true,
@@ -23,6 +37,10 @@ export function MailPage() {
   const to = params.get('to') ?? ''
   const keyword = params.get('keyword') ?? ''
   const unread = params.get('unread') === '1'
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: 'Mail', to: '/mail' }])
+  }, [setBreadcrumbs])
 
   useEffect(() => {
     let mounted = true
@@ -53,64 +71,102 @@ export function MailPage() {
     }
   }, [contact, from, keyword, to, unread])
 
+  const unreadCount = useMemo(
+    () => state.threads.reduce((sum, thread) => sum + thread.unreadCount, 0),
+    [state.threads]
+  )
+
   return (
-    <div className={styles.container}>
-      <h1 className={styles.title}>Mail Threads</h1>
+    <div className={styles.page}>
+      <aside className={styles.sidebar}>
+        <Link to="/mail/thread/new" className={styles.composeButton}>
+          Compose
+        </Link>
+        <nav className={styles.navList}>
+          <Link className={`${styles.navItem} ${!unread ? styles.navItemActive : ''}`} to="/mail">
+            Inbox
+          </Link>
+          <Link className={`${styles.navItem} ${unread ? styles.navItemActive : ''}`} to="/mail?unread=1">
+            Unread ({unreadCount})
+          </Link>
+          <Link className={styles.navItem} to="/mail/contact">
+            Contacts
+          </Link>
+          <Link className={styles.navItem} to="/mail/new-contact">
+            New Contact
+          </Link>
+        </nav>
+      </aside>
 
-      <form
-        className={styles.filters}
-        onSubmit={(event) => {
-          event.preventDefault()
-          const form = new FormData(event.currentTarget)
-          const next = new URLSearchParams()
-          const nextContact = String(form.get('contact') ?? '').trim()
-          const nextFrom = String(form.get('from') ?? '').trim()
-          const nextTo = String(form.get('to') ?? '').trim()
-          const nextKeyword = String(form.get('keyword') ?? '').trim()
-          const nextUnread = form.get('unread') === 'on'
+      <section className={styles.content}>
+        <header className={styles.header}>
+          <h1 className={styles.title}>Mail</h1>
+          <form
+            className={styles.searchRow}
+            onSubmit={(event) => {
+              event.preventDefault()
+              const form = new FormData(event.currentTarget)
+              const next = new URLSearchParams()
+              const nextContact = String(form.get('contact') ?? '').trim()
+              const nextFrom = String(form.get('from') ?? '').trim()
+              const nextTo = String(form.get('to') ?? '').trim()
+              const nextKeyword = String(form.get('keyword') ?? '').trim()
+              const nextUnread = form.get('unread') === 'on'
 
-          if (nextContact) next.set('contact', nextContact)
-          if (nextFrom) next.set('from', nextFrom)
-          if (nextTo) next.set('to', nextTo)
-          if (nextKeyword) next.set('keyword', nextKeyword)
-          if (nextUnread) next.set('unread', '1')
+              if (nextContact) next.set('contact', nextContact)
+              if (nextFrom) next.set('from', nextFrom)
+              if (nextTo) next.set('to', nextTo)
+              if (nextKeyword) next.set('keyword', nextKeyword)
+              if (nextUnread) next.set('unread', '1')
 
-          setParams(next)
-        }}
-      >
-        <input name="contact" defaultValue={contact} placeholder="Contact slug" className={styles.input} />
-        <input name="keyword" defaultValue={keyword} placeholder="Keyword" className={styles.input} />
-        <input name="from" defaultValue={from} type="date" className={styles.input} />
-        <input name="to" defaultValue={to} type="date" className={styles.input} />
-        <label className={styles.checkboxLabel}>
-          <input name="unread" type="checkbox" defaultChecked={unread} />
-          <span>Unread only</span>
-        </label>
-        <button type="submit" className={styles.submit}>Filter</button>
-      </form>
+              setParams(next)
+            }}
+          >
+            <input
+              name="keyword"
+              defaultValue={keyword}
+              placeholder="Search mail"
+              className={styles.searchInput}
+            />
+            <input name="contact" defaultValue={contact} placeholder="Contact" className={styles.filterInput} />
+            <input name="from" defaultValue={from} type="date" className={styles.filterInput} />
+            <input name="to" defaultValue={to} type="date" className={styles.filterInput} />
+            <label className={styles.checkboxLabel}>
+              <input name="unread" type="checkbox" defaultChecked={unread} />
+              <span>Unread</span>
+            </label>
+            <button type="submit" className={styles.filterButton}>
+              Filter
+            </button>
+          </form>
+        </header>
 
-      <div className={styles.actions}>
-        <Link to="/mail/thread/new">New thread</Link>
-        <Link to="/mail/new-contact">New contact</Link>
-        <Link to="/mail/contact">All contacts</Link>
-      </div>
+        {state.error ? <p className={styles.error}>{state.error}</p> : null}
+        {state.isLoading ? <p className={styles.status}>Loading threads...</p> : null}
 
-      {state.isLoading ? <p>Loading...</p> : null}
-      {state.error ? <p className={styles.error}>{state.error}</p> : null}
-
-      <ul className={styles.list}>
-        {state.threads.map((thread) => (
-          <li key={thread.threadUid} className={styles.item}>
-            <Link to={`/mail/thread/${thread.threadUid}`} className={styles.threadLink}>
-              {thread.title || '(untitled thread)'}
+        <div className={styles.listWrap}>
+          {state.threads.map((thread) => (
+            <Link
+              to={`/mail/thread/${thread.threadUid}`}
+              key={thread.threadUid}
+              className={`${styles.row} ${thread.unreadCount > 0 ? styles.rowUnread : ''}`}
+            >
+              <div className={styles.rowSender}>{getSenderLabel(thread)}</div>
+              <div className={styles.rowMain}>
+                <span className={styles.rowSubject}>{thread.title || '(untitled thread)'}</span>
+                <span className={styles.rowSnippet}>{thread.lastReplySnippet || 'No messages yet'}</span>
+              </div>
+              <div className={styles.rowMeta}>
+                {thread.unreadCount > 0 ? <span className={styles.unreadBadge}>{thread.unreadCount}</span> : null}
+                <span>{formatDate(thread.lastReplyAt || thread.updatedAt)}</span>
+              </div>
             </Link>
-            <p className={styles.meta}>
-              unread: {thread.unreadCount} | updated: {thread.updatedAt}
-            </p>
-            {thread.lastReplySnippet ? <p className={styles.snippet}>{thread.lastReplySnippet}</p> : null}
-          </li>
-        ))}
-      </ul>
+          ))}
+          {!state.isLoading && state.threads.length === 0 ? (
+            <div className={styles.empty}>No threads match this filter.</div>
+          ) : null}
+        </div>
+      </section>
     </div>
   )
 }

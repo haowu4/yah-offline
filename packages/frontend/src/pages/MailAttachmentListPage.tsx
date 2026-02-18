@@ -2,13 +2,23 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { listThreadAttachments } from '../lib/api/mail'
 import type { ApiMailAttachmentSummary } from '../lib/api/mail'
+import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailCommon.module.css'
 
 export function MailAttachmentListPage() {
   const params = useParams()
+  const { setBreadcrumbs } = useMailBreadcrumbs()
   const threadUid = params.threadId ?? ''
   const [attachments, setAttachments] = useState<ApiMailAttachmentSummary[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setBreadcrumbs([
+      { label: 'Mail', to: '/mail' },
+      { label: `Thread ${threadUid.slice(0, 8)}`, to: `/mail/thread/${threadUid}` },
+      { label: 'Attachments' },
+    ])
+  }, [setBreadcrumbs, threadUid])
 
   useEffect(() => {
     if (!threadUid) return

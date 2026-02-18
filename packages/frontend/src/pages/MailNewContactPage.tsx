@@ -1,11 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { createContact } from '../lib/api/mail'
+import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailCommon.module.css'
 
 export function MailNewContactPage() {
   const navigate = useNavigate()
+  const { setBreadcrumbs } = useMailBreadcrumbs()
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setBreadcrumbs([
+      { label: 'Mail', to: '/mail' },
+      { label: 'Contacts', to: '/mail/contact' },
+      { label: 'New Contact' },
+    ])
+  }, [setBreadcrumbs])
 
   return (
     <div className={styles.container}>

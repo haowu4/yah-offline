@@ -1,0 +1,37 @@
+.root {
+  width: 100%;
+}
+
+.breadcrumbs {
+  width: min(var(--container-max), calc(100% - (var(--container-gutter) * 2)));
+  margin: 0 auto;
+  padding: 14px 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #3f3f3f;
+}
+
+.crumbWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crumbLink {
+  color: #1f4fbf;
+  text-decoration: none;
+}
+
+.crumbLink:hover {
+  text-decoration: underline;
+}
+
+.crumbCurrent {
+  color: #202020;
+  font-weight: 800;
+}
+
+.sep {
+  color: #6f6f6f;
+  font-weight: 700;
+}

@@ -3,15 +3,25 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { getReply } from '../lib/api/mail'
 import type { ApiMailAttachmentSummary, ApiMailReply } from '../lib/api/mail'
+import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailCommon.module.css'
 
 export function MailReplyPage() {
   const params = useParams()
+  const { setBreadcrumbs } = useMailBreadcrumbs()
   const threadUid = params.threadId ?? ''
   const replyId = Number.parseInt(params.replyId ?? '', 10)
   const [reply, setReply] = useState<ApiMailReply | null>(null)
   const [attachments, setAttachments] = useState<ApiMailAttachmentSummary[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setBreadcrumbs([
+      { label: 'Mail', to: '/mail' },
+      { label: `Thread ${threadUid.slice(0, 8)}`, to: `/mail/thread/${threadUid}` },
+      { label: `Reply ${Number.isInteger(replyId) ? `#${replyId}` : ''}`.trim() },
+    ])
+  }, [replyId, setBreadcrumbs, threadUid])
 
   useEffect(() => {
     if (!threadUid || !Number.isInteger(replyId)) return

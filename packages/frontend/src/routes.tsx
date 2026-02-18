@@ -10,6 +10,7 @@ import { MailThreadPage } from "./pages/MailThreadPage";
 import { MailAttachmentListPage } from "./pages/MailAttachmentListPage";
 import { MailReplyPage } from "./pages/MailReplyPage";
 import { MailAttachmentViewPage } from "./pages/MailAttachmentViewPage";
+import { MailLayout } from "./layout/MailLayout";
 import styles from "./routes.module.css";
 
 export function AppRoutes() {
@@ -20,18 +21,20 @@ export function AppRoutes() {
                     <Route path="/" element={<Navigate to="/search" replace />} />
                     <Route path="/search" element={<SearchPage />} />
                     <Route path="/content/:slug" element={<ArticlePage />} />
-                    <Route path="/mail" element={<MailPage />} />
-                    <Route path="/mail/contact" element={<MailContactListPage />} />
-                    <Route path="/mail/new-contact" element={<MailNewContactPage />} />
-                    <Route path="/mail/contact/:slug" element={<MailContactDetailPage />} />
-                    <Route path="/mail/thread/new" element={<MailThreadPage />} />
-                    <Route path="/mail/thread/:threadId" element={<MailThreadPage />} />
-                    <Route path="/mail/thread/:threadId/attachment" element={<MailAttachmentListPage />} />
-                    <Route path="/mail/thread/:threadId/reply/:replyId" element={<MailReplyPage />} />
-                    <Route
-                        path="/mail/thread/:threadId/reply/:replyId/attachment/:attachmentSlug"
-                        element={<MailAttachmentViewPage />}
-                    />
+                    <Route path="/mail" element={<MailLayout />}>
+                        <Route index element={<MailPage />} />
+                        <Route path="contact" element={<MailContactListPage />} />
+                        <Route path="new-contact" element={<MailNewContactPage />} />
+                        <Route path="contact/:slug" element={<MailContactDetailPage />} />
+                        <Route path="thread/new" element={<MailThreadPage />} />
+                        <Route path="thread/:threadId" element={<MailThreadPage />} />
+                        <Route path="thread/:threadId/attachment" element={<MailAttachmentListPage />} />
+                        <Route path="thread/:threadId/reply/:replyId" element={<MailReplyPage />} />
+                        <Route
+                            path="thread/:threadId/reply/:replyId/attachment/:attachmentSlug"
+                            element={<MailAttachmentViewPage />}
+                        />
+                    </Route>
                     <Route path="*" element={<Navigate to="/search" replace />} />
                 </Route>
             </Routes>

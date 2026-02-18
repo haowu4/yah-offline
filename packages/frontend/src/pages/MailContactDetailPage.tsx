@@ -2,14 +2,24 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { getContact, updateContact } from '../lib/api/mail'
 import type { ApiMailContact } from '../lib/api/mail'
+import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailCommon.module.css'
 
 export function MailContactDetailPage() {
   const params = useParams()
+  const { setBreadcrumbs } = useMailBreadcrumbs()
   const [contact, setContact] = useState<ApiMailContact | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const slug = params.slug ?? ''
+
+  useEffect(() => {
+    setBreadcrumbs([
+      { label: 'Mail', to: '/mail' },
+      { label: 'Contacts', to: '/mail/contact' },
+      { label: contact?.name || slug || 'Contact' },
+    ])
+  }, [contact?.name, setBreadcrumbs, slug])
 
   useEffect(() => {
     if (!slug) return

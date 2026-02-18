@@ -1,0 +1,174 @@
+.page {
+  width: min(var(--container-max), calc(100% - (var(--container-gutter) * 2)));
+  margin: 0 auto;
+  padding: 18px 0 28px;
+}
+
+.header {
+  border: 1px solid var(--line);
+  border-radius: 2px 2px 0 0;
+  background: var(--surface);
+  padding: 12px;
+  border-bottom: 0;
+}
+
+.subject {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.threadBody {
+  border: 1px solid var(--line);
+  border-radius: 0 0 2px 2px;
+  background: var(--surface);
+}
+
+.messageList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.messageItem {
+  border-bottom: 1px solid var(--line);
+}
+
+.messageHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  font-size: 13px;
+  color: #4a4f57;
+}
+
+.messageRole {
+  font-weight: 700;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  background: #fff;
+}
+
+.unread {
+  border-color: #9db0db;
+  background: #edf3ff;
+  color: #173a9a;
+  font-weight: 700;
+}
+
+.messageContent {
+  padding: 0 12px 12px;
+}
+
+.metaLink {
+  padding: 0 12px 12px;
+  font-size: 13px;
+}
+
+.composer {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  padding: 12px;
+}
+
+.composerTitle {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid var(--line-strong);
+  border-radius: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.textarea {
+  min-height: 160px;
+  resize: vertical;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(31, 77, 255, 0.16);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.button {
+  border: 2px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--line-strong);
+  color: #fff;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.buttonSecondary {
+  border: 2px solid var(--line-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.error {
+  color: #b00020;
+  margin: 8px 0 0;
+}
+
+.empty {
+  padding: 14px 12px;
+  color: #4a4f57;
+}
+
+@media (max-width: 900px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}

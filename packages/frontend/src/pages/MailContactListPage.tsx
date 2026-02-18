@@ -2,11 +2,20 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { listContacts } from '../lib/api/mail'
 import type { ApiMailContact } from '../lib/api/mail'
+import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailCommon.module.css'
 
 export function MailContactListPage() {
+  const { setBreadcrumbs } = useMailBreadcrumbs()
   const [contacts, setContacts] = useState<ApiMailContact[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setBreadcrumbs([
+      { label: 'Mail', to: '/mail' },
+      { label: 'Contacts' },
+    ])
+  }, [setBreadcrumbs])
 
   useEffect(() => {
     void listContacts()

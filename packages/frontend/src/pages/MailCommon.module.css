@@ -147,6 +147,15 @@
   font-weight: 700;
 }
 
+.contactListIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  object-fit: cover;
+  display: block;
+}
+
 .meta {
   margin: 0 0 8px;
   color: #4a4f57;
@@ -189,6 +198,15 @@
   max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 2px;
+}
+
+.contactIconPreview {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  object-fit: cover;
+  display: block;
 }
 
 @media (max-width: 720px) {

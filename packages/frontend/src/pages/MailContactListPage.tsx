@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { listContacts } from '../lib/api/mail'
+import { getContactIconUrl, listContacts } from '../lib/api/mail'
 import type { ApiMailContact } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailCommon.module.css'
@@ -42,6 +42,16 @@ export function MailContactListPage() {
         {contacts.map((contact) => (
           <li key={contact.id} className={styles.item}>
             <p className={styles.itemTitle}>
+              {contact.iconLocation ? (
+                <img
+                  className={styles.contactListIcon}
+                  src={getContactIconUrl(contact.slug, contact.updatedAt)}
+                  alt={`${contact.name} icon`}
+                  onError={(event) => {
+                    event.currentTarget.style.display = 'none'
+                  }}
+                />
+              ) : null}
               <Link to={`/mail/contact/${contact.slug}`}>{contact.name}</Link>
               <span className={styles.badge}>{contact.slug}</span>
             </p>

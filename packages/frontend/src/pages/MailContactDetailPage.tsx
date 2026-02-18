@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { getContact, updateContact } from '../lib/api/mail'
+import { getContact, getContactIconUrl, updateContact, uploadContactIconMultipart } from '../lib/api/mail'
 import type { ApiMailContact } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import { ColorPicker } from '../components/ColorPicker'
+import { normalizeContactIcon } from '../lib/contactIcon'
 import styles from './MailCommon.module.css'
 
 export function MailContactDetailPage() {
@@ -14,6 +15,7 @@ export function MailContactDetailPage() {
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [color, setColor] = useState('#6b7280')
+  const [iconPreviewFailed, setIconPreviewFailed] = useState(false)
 
   const slug = params.slug ?? ''
 
@@ -40,6 +42,10 @@ export function MailContactDetailPage() {
       })
   }, [slug])
 
+  useEffect(() => {
+    setIconPreviewFailed(false)
+  }, [contact?.slug, contact?.updatedAt])
+
   if (!slug) return <div className={styles.container}>Missing slug</div>
 
   return (
@@ -58,16 +64,23 @@ export function MailContactDetailPage() {
             setSaveNotice(null)
             setSaveError(null)
             const form = new FormData(event.currentTarget)
+            const iconFile = form.get('iconFile')
             void updateContact(slug, {
               name: String(form.get('name') ?? '').trim() || undefined,
               slug: String(form.get('slug') ?? '').trim() || undefined,
               instruction: String(form.get('instruction') ?? '').trim() || undefined,
-              icon: String(form.get('icon') ?? '').trim() || undefined,
               color,
               defaultModel: String(form.get('defaultModel') ?? '').trim() || undefined,
             })
-              .then((payload) => {
-                setContact(payload.contact)
+              .then(async (payload) => {
+                let nextContact = payload.contact
+                if (iconFile instanceof File && iconFile.size > 0) {
+                  const normalized = await normalizeContactIcon(iconFile)
+                  const pngFile = new File([normalized], 'icon.png', { type: 'image/png' })
+                  const uploaded = await uploadContactIconMultipart(payload.contact.slug, pngFile)
+                  nextContact = uploaded.contact
+                }
+                setContact(nextContact)
                 setError(null)
                 setSaveNotice('Saved successfully.')
               })
@@ -98,16 +111,27 @@ export function MailContactDetailPage() {
               />
             </div>
             <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="edit-contact-icon">Icon</label>
+              <label className={styles.fieldLabel} htmlFor="edit-contact-icon-file">Icon File</label>
               <input
-                id="edit-contact-icon"
+                id="edit-contact-icon-file"
                 className={styles.input}
-                name="icon"
-                defaultValue={contact.icon}
-                placeholder="Icon"
+                name="iconFile"
+                type="file"
+                accept="image/png,image/jpeg"
               />
             </div>
           </div>
+          {contact.iconLocation && !iconPreviewFailed ? (
+            <div className={styles.field}>
+              <label className={styles.fieldLabel}>Current Icon</label>
+              <img
+                className={styles.contactIconPreview}
+                src={getContactIconUrl(contact.slug, contact.updatedAt)}
+                alt={`${contact.name} icon`}
+                onError={() => setIconPreviewFailed(true)}
+              />
+            </div>
+          ) : null}
           <div className={styles.row}>
             <div className={styles.field}>
               <label className={styles.fieldLabel} htmlFor="edit-contact-color">Color</label>

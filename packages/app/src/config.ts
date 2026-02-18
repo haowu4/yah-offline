@@ -3,6 +3,9 @@ import { getAppDataPath } from "./utils.js"
 
 export type AppConfig = {
 
+    app: {
+        storagePath: string // env: YAH_STORAGE_PATH default to getDefaultStroagePath().
+    },
 
     db: {
         dbPath: string // env: YAH_DB_PATH default to platform idael place for data.
@@ -24,6 +27,10 @@ export type AppConfig = {
 
 function getDefaultDBPath(): string {
     return path.join(getAppDataPath(), "app.db")
+}
+
+function getDefaultStroagePath(): string {
+    return path.join(getAppDataPath(), "data")
 }
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -62,6 +69,7 @@ function parseApiKeySource(value: string | undefined): "env" | "keychain" {
 }
 
 export async function getAppConfig(): Promise<AppConfig> {
+    const storagePath = process.env.YAH_STORAGE_PATH || getDefaultStroagePath()
     const dbPath = process.env.YAH_DB_PATH || getDefaultDBPath()
     const onDBSchemaConflict = parseSchemaConflictMode(
         process.env.YAH_ON_DB_SCHEMA_CONFLICT
@@ -86,6 +94,9 @@ export async function getAppConfig(): Promise<AppConfig> {
     }
 
     return {
+        app: {
+            storagePath,
+        },
         db: {
             dbPath,
             onDBSchemaConflict,

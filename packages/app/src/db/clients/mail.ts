@@ -26,6 +26,10 @@ function toBool(value: number): boolean {
   return value === 1
 }
 
+function buildContactIconLocation(contactId: number, slug: string): string {
+  return `${contactId}-${slug}.png`
+}
+
 function toReplyRecord(row: {
   id: number
   thread_id: number
@@ -110,7 +114,7 @@ export class MailDBClient {
     const rows = this.db
       .prepare(
         `
-          SELECT id, slug, name, instruction, icon, color, default_model, created_at, updated_at
+          SELECT id, slug, name, instruction, icon, icon_location, color, default_model, created_at, updated_at
           FROM mail_contact
           ORDER BY name COLLATE NOCASE ASC, id ASC
         `
@@ -121,6 +125,7 @@ export class MailDBClient {
       name: string
       instruction: string
       icon: string
+      icon_location: string | null
       color: string
       default_model: string | null
       created_at: string
@@ -133,6 +138,7 @@ export class MailDBClient {
       name: row.name,
       instruction: row.instruction,
       icon: row.icon,
+      iconLocation: row.icon_location,
       color: row.color,
       defaultModel: row.default_model,
       createdAt: row.created_at,
@@ -161,13 +167,18 @@ export class MailDBClient {
     const result = this.db
       .prepare(
         `
-          INSERT INTO mail_contact (slug, name, instruction, icon, color, default_model)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO mail_contact (slug, name, instruction, icon, icon_location, color, default_model)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `
       )
-      .run(slug, name, instruction, icon, color, defaultModel)
+      .run(slug, name, instruction, icon, null, color, defaultModel)
 
-    return this.getContactById(result.lastInsertRowid as number)
+    const contactId = result.lastInsertRowid as number
+    this.db
+      .prepare("UPDATE mail_contact SET icon_location = ? WHERE id = ?")
+      .run(buildContactIconLocation(contactId, slug), contactId)
+
+    return this.getContactById(contactId)
   }
 
   getContactBySlug(slug: string): MailContactRecord | null {
@@ -177,7 +188,7 @@ export class MailDBClient {
     const row = this.db
       .prepare(
         `
-          SELECT id, slug, name, instruction, icon, color, default_model, created_at, updated_at
+          SELECT id, slug, name, instruction, icon, icon_location, color, default_model, created_at, updated_at
           FROM mail_contact
           WHERE slug = ?
         `
@@ -189,6 +200,7 @@ export class MailDBClient {
           name: string
           instruction: string
           icon: string
+          icon_location: string | null
           color: string
           default_model: string | null
           created_at: string
@@ -204,6 +216,7 @@ export class MailDBClient {
       name: row.name,
       instruction: row.instruction,
       icon: row.icon,
+      iconLocation: row.icon_location,
       color: row.color,
       defaultModel: row.default_model,
       createdAt: row.created_at,
@@ -251,6 +264,7 @@ export class MailDBClient {
     const nextColor = args.color == null ? current.color : args.color.trim() || "#6b7280"
     const nextDefaultModel =
       args.defaultModel == null ? current.defaultModel : args.defaultModel?.trim() || null
+    const nextIconLocation = buildContactIconLocation(current.id, nextSlug)
 
     this.db
       .prepare(
@@ -260,6 +274,7 @@ export class MailDBClient {
               name = ?,
               instruction = ?,
               icon = ?,
+              icon_location = ?,
               color = ?,
               default_model = ?,
               updated_at = datetime('now')
@@ -271,6 +286,7 @@ export class MailDBClient {
         nextName,
         nextInstruction,
         nextIcon,
+        nextIconLocation,
         nextColor,
         nextDefaultModel,
         current.id
@@ -674,6 +690,8 @@ export class MailDBClient {
             c.name AS contact_name,
             c.color AS contact_color,
             c.icon AS contact_icon,
+            c.icon_location AS contact_icon_location,
+            c.updated_at AS contact_updated_at,
             (SELECT COUNT(1) FROM mail_attachment a WHERE a.reply_id = r.id) AS attachment_count
           FROM mail_reply r
           LEFT JOIN mail_contact c ON c.id = r.contact_id
@@ -697,6 +715,8 @@ export class MailDBClient {
       contact_name: string | null
       contact_color: string | null
       contact_icon: string | null
+      contact_icon_location: string | null
+      contact_updated_at: string | null
       attachment_count: number
     }>
 
@@ -714,6 +734,8 @@ export class MailDBClient {
                 name: row.contact_name,
                 color: row.contact_color,
                 icon: row.contact_icon,
+                iconLocation: row.contact_icon_location,
+                updatedAt: row.contact_updated_at || row.created_at,
               },
       })),
     }
@@ -741,7 +763,9 @@ export class MailDBClient {
             c.slug AS contact_slug,
             c.name AS contact_name,
             c.color AS contact_color,
-            c.icon AS contact_icon
+            c.icon AS contact_icon,
+            c.icon_location AS contact_icon_location,
+            c.updated_at AS contact_updated_at
           FROM mail_reply r
           LEFT JOIN mail_contact c ON c.id = r.contact_id
           WHERE r.id = ? AND r.thread_id = ?
@@ -764,6 +788,8 @@ export class MailDBClient {
           contact_name: string | null
           contact_color: string | null
           contact_icon: string | null
+          contact_icon_location: string | null
+          contact_updated_at: string | null
         }
       | undefined
 
@@ -782,6 +808,8 @@ export class MailDBClient {
                 name: row.contact_name,
                 color: row.contact_color,
                 icon: row.contact_icon,
+                iconLocation: row.contact_icon_location,
+                updatedAt: row.contact_updated_at || row.created_at,
               },
       },
       attachments: this.listAttachmentsByReplyId(row.id),
@@ -949,14 +977,21 @@ export class MailDBClient {
       const contacts = this.db
         .prepare(
           `
-            SELECT DISTINCT c.slug, c.name, c.color, c.icon
+            SELECT DISTINCT c.slug, c.name, c.color, c.icon, c.icon_location, c.updated_at
             FROM mail_reply r
             JOIN mail_contact c ON c.id = r.contact_id
             WHERE r.thread_id = ?
             ORDER BY c.name COLLATE NOCASE ASC
           `
         )
-        .all(row.id) as Array<{ slug: string; name: string; color: string; icon: string }>
+        .all(row.id) as Array<{
+          slug: string
+          name: string
+          color: string
+          icon: string
+          icon_location: string | null
+          updated_at: string
+        }>
 
       return {
         threadUid: row.thread_uid,
@@ -966,7 +1001,14 @@ export class MailDBClient {
         unreadCount: row.unread_count,
         lastReplyAt: row.last_reply_at,
         lastReplySnippet: row.last_reply_content ? this.toSnippet(row.last_reply_content) : null,
-        contacts,
+        contacts: contacts.map((contact) => ({
+          slug: contact.slug,
+          name: contact.name,
+          color: contact.color,
+          icon: contact.icon,
+          iconLocation: contact.icon_location,
+          updatedAt: contact.updated_at,
+        })),
       }
     })
   }

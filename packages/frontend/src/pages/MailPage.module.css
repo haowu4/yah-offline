@@ -109,6 +109,16 @@
   flex-shrink: 0;
 }
 
+.senderIcon {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  object-fit: cover;
+  display: block;
+  flex-shrink: 0;
+}
+
 .rowMain {
   display: flex;
   gap: 8px;

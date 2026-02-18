@@ -20,7 +20,23 @@ function getMigrationChecksum(sql: string): string {
  * @param db 
  */
 export function addDefaultConfigs(db: Database.Database) {
+    const insert = db.prepare(
+        `
+        INSERT INTO config_value (key, value, description)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO NOTHING
+        `
+    )
 
+    const tx = db.transaction(() => {
+        for (const item of DefaultConfigs) {
+            const normalizedKey = item.key.trim().toLowerCase()
+            if (!normalizedKey) continue
+            insert.run(normalizedKey, item.value, item.description ?? "")
+        }
+    })
+
+    tx()
 }
 
 export function ensureMigrationsTable(db: Database.Database) {

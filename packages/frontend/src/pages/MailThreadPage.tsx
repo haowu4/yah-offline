@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 import {
   createReply,
   createThread,
+  getContactIconUrl,
   getComposerConfig,
   getThread,
   listContacts,
@@ -53,6 +54,7 @@ export function MailThreadPage() {
   const [models, setModels] = useState<string[]>([])
   const [contactInput, setContactInput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [iconLoadFailures, setIconLoadFailures] = useState<Record<number, boolean>>({})
   const autoReadThreadUidRef = useRef<string | null>(null)
 
   const threadUid = params.threadId ?? null
@@ -88,6 +90,7 @@ export function MailThreadPage() {
         setThreadUidState(payload.thread.threadUid)
         setThreadTitle(payload.thread.title)
         setReplies(payload.replies)
+        setIconLoadFailures({})
         setError(null)
       })
       .catch((err: unknown) => {
@@ -161,7 +164,22 @@ export function MailThreadPage() {
                         : undefined
                     }
                   >
-                    {reply.role === 'assistant' ? 'A' : 'U'}
+                    {reply.role === 'assistant' &&
+                    reply.contact?.iconLocation &&
+                    !iconLoadFailures[reply.id] ? (
+                      <img
+                        className={styles.senderAvatarImage}
+                        src={getContactIconUrl(reply.contact.slug, reply.contact.updatedAt)}
+                        alt={reply.contact.name}
+                        onError={() => {
+                          setIconLoadFailures((current) => ({ ...current, [reply.id]: true }))
+                        }}
+                      />
+                    ) : reply.role === 'assistant' ? (
+                      'A'
+                    ) : (
+                      'U'
+                    )}
                   </span>
                   <div className={styles.senderMeta}>
                     <span className={styles.messageRole}>{reply.role === 'assistant' ? 'Assistant' : 'You'}</span>

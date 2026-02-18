@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { listThreads } from '../lib/api/mail'
+import { getContactIconUrl, listThreads } from '../lib/api/mail'
 import type { ApiMailThreadSummary } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailPage.module.css'
@@ -147,12 +147,25 @@ export function MailPage() {
               <div className={styles.rowSender}>
                 <span className={styles.senderDotGroup}>
                   {thread.contacts.slice(0, 3).map((contact) => (
-                    <span
-                      key={contact.slug}
-                      className={styles.senderDot}
-                      style={{ background: contact.color }}
-                      title={contact.name}
-                    />
+                    contact.iconLocation ? (
+                      <img
+                        key={contact.slug}
+                        className={styles.senderIcon}
+                        src={getContactIconUrl(contact.slug, contact.updatedAt)}
+                        alt={contact.name}
+                        title={contact.name}
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    ) : (
+                      <span
+                        key={contact.slug}
+                        className={styles.senderDot}
+                        style={{ background: contact.color }}
+                        title={contact.name}
+                      />
+                    )
                   ))}
                 </span>
                 <span>{getSenderLabel(thread)}</span>

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { createContact } from '../lib/api/mail'
+import { createContact, uploadContactIconMultipart } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import { ColorPicker } from '../components/ColorPicker'
+import { normalizeContactIcon } from '../lib/contactIcon'
 import styles from './MailCommon.module.css'
 
 export function MailNewContactPage() {
@@ -29,6 +30,7 @@ export function MailNewContactPage() {
           event.preventDefault()
           const form = new FormData(event.currentTarget)
           const name = String(form.get('name') ?? '').trim()
+          const iconFile = form.get('iconFile')
           if (!name) {
             setError('name is required')
             return
@@ -38,11 +40,17 @@ export function MailNewContactPage() {
             name,
             slug: String(form.get('slug') ?? '').trim() || undefined,
             instruction: String(form.get('instruction') ?? '').trim() || undefined,
-            icon: String(form.get('icon') ?? '').trim() || undefined,
             color,
             defaultModel: String(form.get('defaultModel') ?? '').trim() || undefined,
           })
-            .then((payload) => {
+            .then(async (payload) => {
+              if (iconFile instanceof File && iconFile.size > 0) {
+                const normalized = await normalizeContactIcon(iconFile)
+                const pngFile = new File([normalized], 'icon.png', { type: 'image/png' })
+                const uploaded = await uploadContactIconMultipart(payload.contact.slug, pngFile)
+                navigate(`/mail/contact/${uploaded.contact.slug}`)
+                return
+              }
               navigate(`/mail/contact/${payload.contact.slug}`)
             })
             .catch((err: unknown) => {
@@ -60,8 +68,14 @@ export function MailNewContactPage() {
             <input id="new-contact-slug" className={styles.input} name="slug" placeholder="Slug" />
           </div>
           <div className={styles.field}>
-            <label className={styles.fieldLabel} htmlFor="new-contact-icon">Icon</label>
-            <input id="new-contact-icon" className={styles.input} name="icon" placeholder="Icon" />
+            <label className={styles.fieldLabel} htmlFor="new-contact-icon-file">Icon File</label>
+            <input
+              id="new-contact-icon-file"
+              className={styles.input}
+              name="iconFile"
+              type="file"
+              accept="image/png,image/jpeg"
+            />
           </div>
         </div>
         <div className={styles.row}>

@@ -159,4 +159,14 @@ export const migrations: Migration[] = [
         );
         `,
     },
+    {
+        name: "004_mail_contact_icon_location",
+        sql: `
+        ALTER TABLE mail_contact ADD COLUMN icon_location TEXT;
+
+        UPDATE mail_contact
+        SET icon_location = printf('%d-%s.png', id, slug)
+        WHERE icon_location IS NULL OR trim(icon_location) = '';
+        `,
+    },
 ]

@@ -1,12 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers ?? {})
+  const isFormDataBody = typeof FormData !== 'undefined' && init?.body instanceof FormData
+  if (!isFormDataBody && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
+    headers,
   })
 
   if (!response.ok) {
@@ -55,6 +58,7 @@ export type ApiMailContact = {
   name: string
   instruction: string
   icon: string
+  iconLocation: string | null
   color: string
   defaultModel: string | null
   createdAt: string
@@ -69,7 +73,14 @@ export type ApiMailThreadSummary = {
   unreadCount: number
   lastReplyAt: string | null
   lastReplySnippet: string | null
-  contacts: Array<{ slug: string; name: string; color: string; icon: string }>
+  contacts: Array<{
+    slug: string
+    name: string
+    color: string
+    icon: string
+    iconLocation: string | null
+    updatedAt: string
+  }>
 }
 
 export type ApiMailReply = {
@@ -85,7 +96,15 @@ export type ApiMailReply = {
   errorMessage: string | null
   createdAt: string
   attachmentCount: number
-  contact: { id: number; slug: string; name: string; color: string; icon: string } | null
+  contact: {
+    id: number
+    slug: string
+    name: string
+    color: string
+    icon: string
+    iconLocation: string | null
+    updatedAt: string
+  } | null
 }
 
 export type ApiMailAttachmentSummary = {
@@ -140,6 +159,20 @@ export async function updateContact(
     method: 'PUT',
     body: JSON.stringify(args),
   })
+}
+
+export async function uploadContactIconMultipart(slug: string, file: File | Blob): Promise<{ contact: ApiMailContact }> {
+  const form = new FormData()
+  form.append('icon', file)
+  return apiFetch(`/mail/contact/${encodeURIComponent(slug)}/icon`, {
+    method: 'PUT',
+    body: form,
+  })
+}
+
+export function getContactIconUrl(slug: string, updatedAt?: string): string {
+  const suffix = updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ''
+  return `${API_BASE}/mail/contact/${encodeURIComponent(slug)}/icon${suffix}`
 }
 
 export async function listThreads(args?: {

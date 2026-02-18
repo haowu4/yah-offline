@@ -1,4 +1,7 @@
 import { Router } from "express"
+import fs from "node:fs"
+import path from "node:path"
+import multer from "multer"
 import { AppCtx } from "../../appCtx.js"
 import { MailEventHub } from "../mailWorker.js"
 
@@ -24,6 +27,22 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
   const router = Router()
   const mailDB = ctx.dbClients.mail()
   const configDB = ctx.dbClients.config()
+  const iconUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 2 * 1024 * 1024,
+    },
+    fileFilter: (_req: unknown, file: { mimetype?: string }, callback: (error: Error | null, acceptFile?: boolean) => void) => {
+      if (file.mimetype === "image/png") {
+        callback(null, true)
+        return
+      }
+      callback(new Error("Only PNG files are allowed"))
+    },
+  }).single("icon")
+
+  const getContactIconDir = () => path.join(ctx.config.app.storagePath, "contact", "icons")
+  const getContactIconPath = (location: string) => path.join(getContactIconDir(), location)
 
   router.get("/mail/stream", (req, res) => {
     res.setHeader("Content-Type", "text/event-stream")
@@ -117,6 +136,12 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
     }
 
     try {
+      const previousContact = mailDB.getContactBySlug(slug)
+      if (!previousContact) {
+        res.status(404).json({ error: "contact not found" })
+        return
+      }
+
       const contact = mailDB.updateContactBySlug(slug, {
         slug: typeof req.body?.slug === "string" ? req.body.slug : undefined,
         name: typeof req.body?.name === "string" ? req.body.name : undefined,
@@ -133,12 +158,95 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
         return
       }
 
+      if (
+        previousContact.iconLocation &&
+        contact.iconLocation &&
+        previousContact.iconLocation !== contact.iconLocation
+      ) {
+        const previousPath = getContactIconPath(previousContact.iconLocation)
+        const nextPath = getContactIconPath(contact.iconLocation)
+        if (fs.existsSync(previousPath)) {
+          fs.mkdirSync(path.dirname(nextPath), { recursive: true })
+          if (fs.existsSync(nextPath)) {
+            fs.rmSync(nextPath, { force: true })
+          }
+          fs.renameSync(previousPath, nextPath)
+        }
+      }
+
       res.json({ contact })
     } catch (error) {
       res.status(400).json({
         error: error instanceof Error ? error.message : "Failed to update contact",
       })
     }
+  })
+
+  router.put("/mail/contact/:slug/icon", (req, res) => {
+    iconUpload(req, res, (uploadError: unknown) => {
+      if (uploadError) {
+        if (
+          uploadError instanceof multer.MulterError &&
+          (uploadError as { code?: string }).code === "LIMIT_FILE_SIZE"
+        ) {
+          res.status(400).json({ error: "Icon file exceeds 2MB limit" })
+          return
+        }
+        res.status(400).json({
+          error: uploadError instanceof Error ? uploadError.message : "Invalid icon upload",
+        })
+        return
+      }
+
+      const slug = req.params.slug?.trim()
+      if (!slug) {
+        res.status(400).json({ error: "slug is required" })
+        return
+      }
+
+      const contact = mailDB.getContactBySlug(slug)
+      if (!contact) {
+        res.status(404).json({ error: "contact not found" })
+        return
+      }
+
+      const file = (req as { file?: { buffer: Buffer } }).file
+      if (!file) {
+        res.status(400).json({ error: "icon file is required" })
+        return
+      }
+
+      const iconLocation = contact.iconLocation || `${contact.id}-${contact.slug}.png`
+      const iconPath = getContactIconPath(iconLocation)
+      fs.mkdirSync(path.dirname(iconPath), { recursive: true })
+      fs.writeFileSync(iconPath, file.buffer)
+
+      const updated = mailDB.getContactById(contact.id)
+      res.json({ contact: updated })
+    })
+  })
+
+  router.get("/mail/contact/:slug/icon", (req, res) => {
+    const slug = req.params.slug?.trim()
+    if (!slug) {
+      res.status(400).json({ error: "slug is required" })
+      return
+    }
+
+    const contact = mailDB.getContactBySlug(slug)
+    if (!contact || !contact.iconLocation) {
+      res.status(404).json({ error: "icon not found" })
+      return
+    }
+
+    const iconPath = getContactIconPath(contact.iconLocation)
+    if (!fs.existsSync(iconPath)) {
+      res.status(404).json({ error: "icon not found" })
+      return
+    }
+
+    res.setHeader("Content-Type", "image/png")
+    res.sendFile(iconPath)
   })
 
   router.get("/mail/thread", (req, res) => {
@@ -389,7 +497,30 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
       // ignored
     }
 
-    res.json({ models: ["gpt-4.1-mini"] })
+    res.json({
+      models: [
+        "gpt-5.2",
+        "gpt-5.1",
+        "gpt-5",
+        "gpt-5-mini",
+        "gpt-5-nano",
+        "gpt-5.2-chat-latest",
+        "gpt-5.1-chat-latest",
+        "gpt-5-chat-latest",
+        "gpt-5.2-codex",
+        "gpt-5.1-codex-max",
+        "gpt-5.1-codex",
+        "gpt-5-codex",
+        "gpt-5.2-pro",
+        "gpt-5-pro",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4.1-nano",
+        "gpt-4o",
+        "gpt-4o-2024-05-13",
+        "gpt-4o-mini",
+      ],
+    })
   })
 
   router.get("/mail/config/composer", (req, res) => {

@@ -6,6 +6,7 @@ export type MailContactRecord = {
   name: string
   instruction: string
   icon: string
+  iconLocation: string | null
   color: string
   defaultModel: string | null
   createdAt: string
@@ -56,14 +57,21 @@ export type MailThreadSummary = {
   unreadCount: number
   lastReplyAt: string | null
   lastReplySnippet: string | null
-  contacts: Array<{ slug: string; name: string; color: string; icon: string }>
+  contacts: Array<{
+    slug: string
+    name: string
+    color: string
+    icon: string
+    iconLocation: string | null
+    updatedAt: string
+  }>
 }
 
 export type MailThreadDetailPayload = {
   thread: MailThreadRecord
   replies: Array<
     MailReplyRecord & {
-      contact: Pick<MailContactRecord, "id" | "slug" | "name" | "color" | "icon"> | null
+      contact: Pick<MailContactRecord, "id" | "slug" | "name" | "color" | "icon" | "iconLocation" | "updatedAt"> | null
       attachmentCount: number
     }
   >
@@ -77,7 +85,7 @@ export type MailAttachmentSummary = Pick<
 export type MailReplyDetailPayload = {
   thread: MailThreadRecord
   reply: MailReplyRecord & {
-    contact: Pick<MailContactRecord, "id" | "slug" | "name" | "color" | "icon"> | null
+    contact: Pick<MailContactRecord, "id" | "slug" | "name" | "color" | "icon" | "iconLocation" | "updatedAt"> | null
   }
   attachments: MailAttachmentSummary[]
 }

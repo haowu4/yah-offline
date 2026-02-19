@@ -24,12 +24,10 @@ export function ConfigPage() {
 
   const [newKey, setNewKey] = useState('')
   const [newValue, setNewValue] = useState('')
-  const [newDescription, setNewDescription] = useState('')
   const [isCreating, setIsCreating] = useState(false)
 
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
-  const [editingDescription, setEditingDescription] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [pendingDeleteKey, setPendingDeleteKey] = useState<string | null>(null)
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({})
@@ -80,12 +78,10 @@ export function ConfigPage() {
       const payload = await createConfig({
         key,
         value: newValue,
-        description: newDescription,
       })
       setConfigs((current) => [...current, payload.config].sort((a, b) => a.key.localeCompare(b.key)))
       setNewKey('')
       setNewValue('')
-      setNewDescription('')
       setError(null)
       setNotice(`Created "${payload.config.key}"`)
     } catch (err) {
@@ -98,13 +94,11 @@ export function ConfigPage() {
   const startEditing = (item: ApiConfigItem) => {
     setEditingKey(item.key)
     setEditingValue(item.value)
-    setEditingDescription(item.description)
   }
 
   const cancelEditing = () => {
     setEditingKey(null)
     setEditingValue('')
-    setEditingDescription('')
   }
 
   const handleSaveEdit = async (key: string) => {
@@ -112,7 +106,6 @@ export function ConfigPage() {
       setIsSaving(true)
       const payload = await updateConfig(key, {
         value: editingValue,
-        description: editingDescription,
       })
       setConfigs((current) =>
         current.map((item) => (item.key === key ? payload.config : item))
@@ -169,16 +162,6 @@ export function ConfigPage() {
               value={newKey}
               onChange={(event) => setNewKey(event.target.value)}
               placeholder="mail.default_model"
-              className={styles.input}
-            />
-          </label>
-
-          <label className={styles.field}>
-            <span className={styles.label}>Description</span>
-            <input
-              value={newDescription}
-              onChange={(event) => setNewDescription(event.target.value)}
-              placeholder="What this key controls"
               className={styles.input}
             />
           </label>
@@ -242,21 +225,13 @@ export function ConfigPage() {
               const isExpanded = Boolean(expandedKeys[item.key])
               const valuePreview =
                 item.value.length > 140 && !isExpanded ? `${item.value.slice(0, 140)}...` : item.value
-              const isDirty = isEditing && (editingValue !== item.value || editingDescription !== item.description)
+              const isDirty = isEditing && editingValue !== item.value
 
               return (
                 <div key={item.key} className={styles.row}>
                   <div className={styles.cellKey}>{item.key}</div>
                   <div className={styles.cellDescription}>
-                    {isEditing ? (
-                      <input
-                        value={editingDescription}
-                        onChange={(event) => setEditingDescription(event.target.value)}
-                        className={styles.input}
-                      />
-                    ) : (
-                      item.description || <span className={styles.placeholder}>No description</span>
-                    )}
+                    {item.description || <span className={styles.placeholder}>No description</span>}
                   </div>
                   <div className={styles.cellValue}>
                     {isEditing ? (

@@ -30,7 +30,6 @@ export async function listConfigs(): Promise<{ configs: ApiConfigItem[] }> {
 export async function createConfig(args: {
   key: string
   value: string
-  description?: string
 }): Promise<{ config: ApiConfigItem }> {
   return apiFetch('/config', {
     method: 'POST',
@@ -42,7 +41,6 @@ export async function updateConfig(
   key: string,
   args: {
     value: string
-    description?: string
   }
 ): Promise<{ config: ApiConfigItem }> {
   return apiFetch(`/config/${encodeURIComponent(key)}`, {

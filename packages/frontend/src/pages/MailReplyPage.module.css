@@ -1,0 +1,176 @@
+.container {
+  width: 100%;
+  margin: 0;
+  padding: 6px 0 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.header {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfbfb;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.error {
+  margin: 0;
+  color: #b00020;
+}
+
+.statusLine {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #555;
+  background: #fff;
+}
+
+.metaCard {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.metaItem {
+  font-size: 13px;
+  color: #3a4250;
+}
+
+.attachments {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.sectionTitle {
+  margin: 0 0 8px;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: #5a6270;
+}
+
+.attachmentRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachmentCard {
+  border: 1px solid #d9dfe8;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+  min-width: 180px;
+  max-width: 280px;
+  display: grid;
+  gap: 6px;
+}
+
+.attachmentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d3d8e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #2d3642;
+  font-size: 12px;
+  padding: 4px 9px;
+  text-decoration: none;
+}
+
+.attachmentChip:hover {
+  background: #eef3ff;
+  border-color: #b9c8ec;
+  text-decoration: none;
+}
+
+.attachmentPreviewLink {
+  display: block;
+}
+
+.attachmentImagePreview {
+  display: block;
+  width: 100%;
+  max-height: 138px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e5eaf1;
+}
+
+.attachmentTextPreview {
+  display: block;
+  border: 1px solid #e5eaf1;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #3e4654;
+  text-decoration: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.badge {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: #555;
+  background: #fff;
+}
+
+.contentCard {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px;
+}
+
+.markdown :global(p:first-child) {
+  margin-top: 0;
+}
+
+.markdown :global(p:last-child) {
+  margin-bottom: 0;
+}
+
+@media (max-width: 760px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -26,6 +26,33 @@
   padding-right: 2px;
 }
 
+.mainColumnWrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.scrollFadeTop,
+.scrollFadeBottom {
+  position: absolute;
+  left: 0;
+  right: 8px;
+  height: 18px;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.scrollFadeTop {
+  top: 0;
+  background: linear-gradient(180deg, rgba(244, 247, 251, 0.94) 0%, rgba(244, 247, 251, 0) 100%);
+}
+
+.scrollFadeBottom {
+  bottom: 0;
+  background: linear-gradient(0deg, rgba(244, 247, 251, 0.94) 0%, rgba(244, 247, 251, 0) 100%);
+}
+
 .sideColumn {
   width: 46px;
 }
@@ -250,6 +277,70 @@
 
 .messageContent :global(blockquote) {
   margin: 10px 0;
+}
+
+.attachmentRow {
+  padding: 0 12px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.attachmentCard {
+  border: 1px solid #d9dfe8;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+  min-width: 180px;
+  max-width: 280px;
+  display: grid;
+  gap: 6px;
+}
+
+.attachmentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d3d8e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #2d3642;
+  font-size: 12px;
+  padding: 4px 9px;
+  text-decoration: none;
+}
+
+.attachmentChip:hover {
+  background: #eef3ff;
+  border-color: #b9c8ec;
+  text-decoration: none;
+}
+
+.attachmentPreviewLink {
+  display: block;
+}
+
+.attachmentImagePreview {
+  display: block;
+  width: 100%;
+  max-height: 138px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e5eaf1;
+}
+
+.attachmentTextPreview {
+  display: block;
+  border: 1px solid #e5eaf1;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #3e4654;
+  text-decoration: none;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .metaLink {

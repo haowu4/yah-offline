@@ -1,18 +1,20 @@
 import { MarkdownPreview } from '@ootc/markdown'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { FiArrowDown, FiArrowUp } from 'react-icons/fi'
+import { FiArrowDown, FiArrowUp, FiPaperclip } from 'react-icons/fi'
 import {
   createReply,
   createThread,
+  getAttachment,
   getContactIconUrl,
   getComposerConfig,
   getThread,
   listContacts,
   listModelCandidates,
+  listThreadAttachments,
   markThreadRead,
 } from '../lib/api/mail'
-import type { ApiMailContact, ApiMailReply } from '../lib/api/mail'
+import type { ApiMailAttachmentSummary, ApiMailContact, ApiMailReply } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import { useMailCtx } from '../ctx/MailCtx'
 import styles from './MailThreadPage.module.css'
@@ -53,18 +55,25 @@ export function MailThreadPage() {
   const [threadTitle, setThreadTitle] = useState('')
   const [threadUidState, setThreadUidState] = useState<string | null>(null)
   const [replies, setReplies] = useState<ApiMailReply[]>([])
+  const [attachmentsByReply, setAttachmentsByReply] = useState<Record<number, ApiMailAttachmentSummary[]>>({})
+  const [attachmentPreviewById, setAttachmentPreviewById] = useState<
+    Record<number, { kind: 'text' | 'image'; mimeType: string; textSnippet: string | null; imageSrc: string | null }>
+  >({})
   const [contacts, setContacts] = useState<ApiMailContact[]>([])
   const [models, setModels] = useState<string[]>([])
   const [contactInput, setContactInput] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [iconLoadFailures, setIconLoadFailures] = useState<Record<number, boolean>>({})
   const [newReplyIds, setNewReplyIds] = useState<Record<number, boolean>>({})
+  const [isAtTop, setIsAtTop] = useState(true)
+  const [isAtBottom, setIsAtBottom] = useState(false)
   const mainColumnRef = useRef<HTMLDivElement | null>(null)
   const messageListRef = useRef<HTMLUListElement | null>(null)
   const composerRef = useRef<HTMLElement | null>(null)
   const autoReadThreadUidRef = useRef<string | null>(null)
 
   const threadUid = params.threadId ?? null
+  const effectiveThreadUid = threadUidState ?? threadUid
 
   useEffect(() => {
     void Promise.all([listContacts(), listModelCandidates(), getComposerConfig()])
@@ -88,16 +97,24 @@ export function MailThreadPage() {
       setThreadUidState(null)
       setThreadTitle('')
       setReplies([])
+      setAttachmentsByReply({})
+      setAttachmentPreviewById({})
       setNewReplyIds({})
       autoReadThreadUidRef.current = null
       return
     }
 
-    void getThread(threadUid)
-      .then((payload) => {
-        setThreadUidState(payload.thread.threadUid)
-        setThreadTitle(payload.thread.title)
-        setReplies(payload.replies)
+    void Promise.all([getThread(threadUid), listThreadAttachments(threadUid)])
+      .then(([threadPayload, attachmentPayload]) => {
+        setThreadUidState(threadPayload.thread.threadUid)
+        setThreadTitle(threadPayload.thread.title)
+        setReplies(threadPayload.replies)
+        const grouped: Record<number, ApiMailAttachmentSummary[]> = {}
+        for (const attachment of attachmentPayload.attachments) {
+          if (!grouped[attachment.replyId]) grouped[attachment.replyId] = []
+          grouped[attachment.replyId].push(attachment)
+        }
+        setAttachmentsByReply(grouped)
         setIconLoadFailures({})
         setError(null)
       })
@@ -106,7 +123,57 @@ export function MailThreadPage() {
       })
   }, [threadUid])
 
-  const effectiveThreadUid = threadUidState ?? threadUid
+  useEffect(() => {
+    if (!effectiveThreadUid) return
+    const attachments = Object.values(attachmentsByReply).flat()
+    const missing = attachments.filter((item) => !attachmentPreviewById[item.id])
+    if (missing.length === 0) return
+
+    let cancelled = false
+    void Promise.all(
+      missing.map(async (item) => {
+        const payload = await getAttachment({
+          threadUid: effectiveThreadUid,
+          replyId: item.replyId,
+          attachmentSlug: item.slug,
+        })
+        const detail = payload.attachment
+        const preview =
+          detail.kind === 'image'
+            ? {
+                kind: 'image' as const,
+                mimeType: detail.mimeType,
+                textSnippet: null,
+                imageSrc: detail.base64Content ? `data:${detail.mimeType};base64,${detail.base64Content}` : null,
+              }
+            : {
+                kind: 'text' as const,
+                mimeType: detail.mimeType,
+                textSnippet: (detail.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 180),
+                imageSrc: null,
+              }
+
+        return { id: item.id, preview }
+      })
+    )
+      .then((items) => {
+        if (cancelled) return
+        setAttachmentPreviewById((current) => {
+          const next = { ...current }
+          for (const item of items) {
+            next[item.id] = item.preview
+          }
+          return next
+        })
+      })
+      .catch(() => {
+        // ignore preview failures; links still work
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [attachmentPreviewById, attachmentsByReply, effectiveThreadUid])
 
   useEffect(() => {
     if (!effectiveThreadUid) {
@@ -143,11 +210,17 @@ export function MailThreadPage() {
     if (!event || !effectiveThreadUid) return
     if (event.threadUid !== effectiveThreadUid) return
 
-    void getThread(effectiveThreadUid)
-      .then((payload) => {
-        setThreadTitle(payload.thread.title)
-        setReplies(payload.replies)
-        if (payload.replies.some((reply) => reply.id === event.replyId)) {
+    void Promise.all([getThread(effectiveThreadUid), listThreadAttachments(effectiveThreadUid)])
+      .then(([threadPayload, attachmentPayload]) => {
+        setThreadTitle(threadPayload.thread.title)
+        setReplies(threadPayload.replies)
+        const grouped: Record<number, ApiMailAttachmentSummary[]> = {}
+        for (const attachment of attachmentPayload.attachments) {
+          if (!grouped[attachment.replyId]) grouped[attachment.replyId] = []
+          grouped[attachment.replyId].push(attachment)
+        }
+        setAttachmentsByReply(grouped)
+        if (threadPayload.replies.some((reply) => reply.id === event.replyId)) {
           setNewReplyIds((current) => ({ ...current, [event.replyId]: true }))
           window.setTimeout(() => {
             setNewReplyIds((current) => {
@@ -164,10 +237,42 @@ export function MailThreadPage() {
       })
   }, [effectiveThreadUid, mail.lastReplyEvent])
 
+  useEffect(() => {
+    const node = mainColumnRef.current
+    if (!node) return
+
+    const updateScrollEdges = () => {
+      const maxScrollTop = Math.max(0, node.scrollHeight - node.clientHeight)
+      setIsAtTop(node.scrollTop <= 2)
+      setIsAtBottom(maxScrollTop - node.scrollTop <= 2)
+    }
+
+    updateScrollEdges()
+    node.addEventListener('scroll', updateScrollEdges, { passive: true })
+    window.addEventListener('resize', updateScrollEdges)
+    const observer = new ResizeObserver(updateScrollEdges)
+    observer.observe(node)
+
+    return () => {
+      node.removeEventListener('scroll', updateScrollEdges)
+      window.removeEventListener('resize', updateScrollEdges)
+      observer.disconnect()
+    }
+  }, [])
+
+  useEffect(() => {
+    const node = mainColumnRef.current
+    if (!node) return
+    const maxScrollTop = Math.max(0, node.scrollHeight - node.clientHeight)
+    setIsAtTop(node.scrollTop <= 2)
+    setIsAtBottom(maxScrollTop - node.scrollTop <= 2)
+  }, [replies, threadTitle, effectiveThreadUid])
+
   return (
     <div className={styles.page}>
       <div className={styles.contentWrap}>
-        <div className={styles.mainColumn} ref={mainColumnRef}>
+        <div className={styles.mainColumnWrap}>
+          <div className={styles.mainColumn} ref={mainColumnRef}>
           <header className={styles.header}>
             <div className={styles.subjectRow}>
               <h1 className={styles.subject}>{threadTitle || 'New thread'}</h1>
@@ -243,6 +348,42 @@ export function MailThreadPage() {
                   <div className={styles.messageContent}>
                     <MarkdownPreview content={reply.content} />
                   </div>
+                  {(attachmentsByReply[reply.id]?.length ?? 0) > 0 ? (
+                    <div className={styles.attachmentRow}>
+                      {(attachmentsByReply[reply.id] || []).map((attachment) => (
+                        <div key={attachment.id} className={styles.attachmentCard}>
+                          <Link
+                            className={styles.attachmentChip}
+                            to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}/attachment/${attachment.slug}`}
+                          >
+                            <FiPaperclip />
+                            <span>{attachment.filename}</span>
+                          </Link>
+                          {attachmentPreviewById[attachment.id]?.kind === 'image' &&
+                          attachmentPreviewById[attachment.id].imageSrc ? (
+                            <Link
+                              className={styles.attachmentPreviewLink}
+                              to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}/attachment/${attachment.slug}`}
+                            >
+                              <img
+                                className={styles.attachmentImagePreview}
+                                src={attachmentPreviewById[attachment.id].imageSrc ?? ''}
+                                alt={attachment.filename}
+                              />
+                            </Link>
+                          ) : null}
+                          {attachmentPreviewById[attachment.id]?.kind === 'text' ? (
+                            <Link
+                              className={styles.attachmentTextPreview}
+                              to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}/attachment/${attachment.slug}`}
+                            >
+                              {attachmentPreviewById[attachment.id].textSnippet || '(empty text file)'}
+                            </Link>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className={styles.metaLink}>
                     <Link to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}`}>View full reply</Link>
                   </div>
@@ -296,6 +437,15 @@ export function MailThreadPage() {
               .then((payload) => {
                 setThreadTitle(payload.thread.title)
                 setReplies(payload.replies)
+                return listThreadAttachments(payload.thread.threadUid)
+              })
+              .then((attachmentPayload) => {
+                const grouped: Record<number, ApiMailAttachmentSummary[]> = {}
+                for (const attachment of attachmentPayload.attachments) {
+                  if (!grouped[attachment.replyId]) grouped[attachment.replyId] = []
+                  grouped[attachment.replyId].push(attachment)
+                }
+                setAttachmentsByReply(grouped)
                 setError(null)
               })
               .catch((err: unknown) => {
@@ -342,9 +492,15 @@ export function MailThreadPage() {
                     type="button"
                     onClick={() => {
                       void markThreadRead(effectiveThreadUid)
-                        .then(() => getThread(effectiveThreadUid))
-                        .then((payload) => {
-                          setReplies(payload.replies)
+                        .then(() => Promise.all([getThread(effectiveThreadUid), listThreadAttachments(effectiveThreadUid)]))
+                        .then(([threadPayload, attachmentPayload]) => {
+                          setReplies(threadPayload.replies)
+                          const grouped: Record<number, ApiMailAttachmentSummary[]> = {}
+                          for (const attachment of attachmentPayload.attachments) {
+                            if (!grouped[attachment.replyId]) grouped[attachment.replyId] = []
+                            grouped[attachment.replyId].push(attachment)
+                          }
+                          setAttachmentsByReply(grouped)
                         })
                         .catch((err: unknown) => {
                           setError(err instanceof Error ? err.message : 'Failed to mark as read')
@@ -358,6 +514,9 @@ export function MailThreadPage() {
               {error ? <p className={styles.error}>{error}</p> : null}
             </form>
           </section>
+          </div>
+          {!isAtTop ? <div className={styles.scrollFadeTop} aria-hidden /> : null}
+          {!isAtBottom ? <div className={styles.scrollFadeBottom} aria-hidden /> : null}
         </div>
 
         <aside className={styles.sideColumn} aria-label="Thread navigation controls">

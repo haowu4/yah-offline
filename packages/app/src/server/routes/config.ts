@@ -21,8 +21,6 @@ export function createConfigRouter(ctx: AppCtx) {
     router.post("/", (req, res) => {
         const key = typeof req.body?.key === "string" ? req.body.key.trim() : ""
         const value = typeof req.body?.value === "string" ? req.body.value : ""
-        const description =
-            typeof req.body?.description === "string" ? req.body.description : ""
 
         if (!key) {
             res.status(400).json({ error: "key is required" })
@@ -34,11 +32,15 @@ export function createConfigRouter(ctx: AppCtx) {
             return
         }
 
+        if (req.body?.description !== undefined) {
+            res.status(400).json({ error: "description is read-only" })
+            return
+        }
+
         try {
             const config = configDB.createConfig({
                 key,
                 value,
-                description,
             })
             res.status(201).json({ config })
         } catch (error) {
@@ -64,12 +66,13 @@ export function createConfigRouter(ctx: AppCtx) {
             return
         }
 
-        const description =
-            typeof req.body?.description === "string" ? req.body.description : ""
+        if (req.body?.description !== undefined) {
+            res.status(400).json({ error: "description is read-only" })
+            return
+        }
 
         const updated = configDB.updateConfig(key, {
             value: req.body.value,
-            description,
         })
 
         if (!updated) {

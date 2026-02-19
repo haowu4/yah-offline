@@ -31,6 +31,20 @@ export class ConfigClient {
         }
     }
 
+    private getConfigByKey(normalizedKey: string): ConfigItem | null {
+        const row = this.db
+            .prepare(
+                `
+                SELECT key, value, description
+                FROM config_value
+                WHERE key = ?
+                `
+            )
+            .get(normalizedKey) as ConfigRow | undefined
+        if (!row) return null
+        return this.toConfigItem(row)
+    }
+
     listConfigs(): ConfigItem[] {
         const rows = this.db
             .prepare(
@@ -44,7 +58,7 @@ export class ConfigClient {
         return rows.map((row) => this.toConfigItem(row))
     }
 
-    createConfig(args: { key: string; value: string; description?: string }): ConfigItem {
+    createConfig(args: { key: string; value: string }): ConfigItem {
         const normalizedKey = this.normalizeKey(args.key)
         this.db
             .prepare(
@@ -53,37 +67,31 @@ export class ConfigClient {
                 VALUES (?, ?, ?)
                 `
             )
-            .run(normalizedKey, args.value, args.description ?? "")
+            .run(normalizedKey, args.value, "")
 
-        return {
-            key: normalizedKey,
-            value: args.value,
-            description: args.description ?? "",
-        }
+        const created = this.getConfigByKey(normalizedKey)
+        if (!created) throw new Error("Failed to load created config")
+        return created
     }
 
     updateConfig(
         key: string,
-        args: { value: string; description?: string }
+        args: { value: string }
     ): ConfigItem | null {
         const normalizedKey = this.normalizeKey(key)
         const result = this.db
             .prepare(
                 `
                 UPDATE config_value
-                SET value = ?, description = ?
+                SET value = ?
                 WHERE key = ?
                 `
             )
-            .run(args.value, args.description ?? "", normalizedKey)
+            .run(args.value, normalizedKey)
 
         if (result.changes === 0) return null
 
-        return {
-            key: normalizedKey,
-            value: args.value,
-            description: args.description ?? "",
-        }
+        return this.getConfigByKey(normalizedKey)
     }
 
     deleteConfig(key: string): boolean {

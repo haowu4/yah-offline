@@ -51,7 +51,7 @@ export function MailAttachmentViewPage() {
     <div className={styles.container}>
       <h1 className={styles.title}>Attachment</h1>
       <div className={styles.actions}>
-        <Link to={`/mail/thread/${threadUid}/reply/${replyId}`}>Back to reply</Link>
+        <Link to={`/mail/thread/${threadUid}`}>Back to thread</Link>
       </div>
       {error ? <p className={styles.error}>{error}</p> : null}
       {!attachment ? <p className={styles.statusLine}>Loading...</p> : null}

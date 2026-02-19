@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { getContact, getContactIconUrl, updateContact, uploadContactIconMultipart } from '../lib/api/mail'
+import {
+  getContact,
+  getContactIconUrl,
+  listModelCandidates,
+  updateContact,
+  uploadContactIconMultipart,
+} from '../lib/api/mail'
 import type { ApiMailContact } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import { ColorPicker } from '../components/ColorPicker'
+import { ModelCombobox } from '../components/ModelCombobox'
 import { normalizeContactIcon } from '../lib/contactIcon'
 import styles from './MailCommon.module.css'
 
@@ -16,6 +23,8 @@ export function MailContactDetailPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [color, setColor] = useState('#6b7280')
   const [iconPreviewFailed, setIconPreviewFailed] = useState(false)
+  const [modelCandidates, setModelCandidates] = useState<string[]>([])
+  const [defaultModel, setDefaultModel] = useState('')
 
   const slug = params.slug ?? ''
 
@@ -33,6 +42,7 @@ export function MailContactDetailPage() {
       .then((payload) => {
         setContact(payload.contact)
         setColor(payload.contact.color || '#6b7280')
+        setDefaultModel(payload.contact.defaultModel ?? '')
         setError(null)
         setSaveNotice(null)
         setSaveError(null)
@@ -43,6 +53,16 @@ export function MailContactDetailPage() {
   }, [slug])
 
   useEffect(() => {
+    void listModelCandidates()
+      .then((payload) => {
+        setModelCandidates(payload.models)
+      })
+      .catch(() => {
+        setModelCandidates([])
+      })
+  }, [])
+
+  useEffect(() => {
     setIconPreviewFailed(false)
   }, [contact?.slug, contact?.updatedAt])
 
@@ -50,7 +70,7 @@ export function MailContactDetailPage() {
 
   return (
     <div className={styles.container}>
-      <h1 className={styles.title}>Contact</h1>
+      <h1 className={styles.title}>Editing {contact?.name || slug}</h1>
       <div className={styles.actions}>
         <Link to="/mail/contact">Back to contacts</Link>
       </div>
@@ -70,7 +90,7 @@ export function MailContactDetailPage() {
               slug: String(form.get('slug') ?? '').trim() || undefined,
               instruction: String(form.get('instruction') ?? '').trim() || undefined,
               color,
-              defaultModel: String(form.get('defaultModel') ?? '').trim() || undefined,
+              defaultModel: defaultModel.trim() || undefined,
             })
               .then(async (payload) => {
                 let nextContact = payload.contact
@@ -89,78 +109,99 @@ export function MailContactDetailPage() {
               })
           }}
         >
-          <div className={styles.field}>
-            <label className={styles.fieldLabel} htmlFor="edit-contact-name">Name</label>
-            <input
-              id="edit-contact-name"
-              className={styles.input}
-              name="name"
-              defaultValue={contact.name}
-              placeholder="Name"
-            />
-          </div>
-          <div className={styles.row}>
+          <div className={styles.sectionCard}>
+            <h2 className={styles.sectionTitle}>Identity</h2>
             <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="edit-contact-slug">Slug</label>
+              <label className={styles.fieldLabel} htmlFor="edit-contact-name">Name</label>
               <input
-                id="edit-contact-slug"
+                id="edit-contact-name"
                 className={styles.input}
-                name="slug"
-                defaultValue={contact.slug}
-                placeholder="Slug"
+                name="name"
+                defaultValue={contact.name}
+                placeholder="Name"
               />
             </div>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="edit-contact-icon-file">Icon File</label>
-              <input
-                id="edit-contact-icon-file"
-                className={styles.input}
-                name="iconFile"
-                type="file"
-                accept="image/png,image/jpeg"
-              />
-            </div>
-          </div>
-          {contact.iconLocation && !iconPreviewFailed ? (
-            <div className={styles.field}>
-              <label className={styles.fieldLabel}>Current Icon</label>
-              <img
-                className={styles.contactIconPreview}
-                src={getContactIconUrl(contact.slug, contact.updatedAt)}
-                alt={`${contact.name} icon`}
-                onError={() => setIconPreviewFailed(true)}
-              />
-            </div>
-          ) : null}
-          <div className={styles.row}>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor="edit-contact-color">Color</label>
-              <ColorPicker id="edit-contact-color" name="color" value={color} onChange={setColor} />
+            <div className={styles.row}>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="edit-contact-slug">Slug</label>
+                <input
+                  id="edit-contact-slug"
+                  className={styles.input}
+                  name="slug"
+                  defaultValue={contact.slug}
+                  placeholder="Slug"
+                />
+              </div>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="edit-contact-color">Color</label>
+                <ColorPicker id="edit-contact-color" name="color" value={color} onChange={setColor} />
+              </div>
             </div>
             <div className={styles.field}>
               <label className={styles.fieldLabel} htmlFor="edit-contact-default-model">Default Model</label>
-              <input
+              <ModelCombobox
                 id="edit-contact-default-model"
-                className={styles.input}
                 name="defaultModel"
-                defaultValue={contact.defaultModel ?? ''}
+                inputClassName={styles.input}
+                value={defaultModel}
+                onChange={setDefaultModel}
+                options={modelCandidates}
                 placeholder="Default model"
               />
             </div>
           </div>
-          <div className={styles.field}>
-            <label className={styles.fieldLabel} htmlFor="edit-contact-instruction">Instruction</label>
-            <textarea
-              id="edit-contact-instruction"
-              className={styles.textarea}
-              name="instruction"
-              defaultValue={contact.instruction}
-              rows={6}
-            />
+
+          <div className={styles.sectionCard}>
+            <h2 className={styles.sectionTitle}>Icon</h2>
+            <div className={styles.iconGrid}>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel} htmlFor="edit-contact-icon-file">Icon File</label>
+                <input
+                  id="edit-contact-icon-file"
+                  className={styles.input}
+                  name="iconFile"
+                  type="file"
+                  accept="image/png,image/jpeg"
+                />
+                <p className={styles.hintText}>Accepted: PNG, JPEG. Saved as PNG.</p>
+              </div>
+              <div className={styles.field}>
+                <label className={styles.fieldLabel}>Current Icon</label>
+                <div className={styles.iconPreviewBox}>
+                  {contact.iconLocation && !iconPreviewFailed ? (
+                    <img
+                      className={styles.contactIconPreview}
+                      src={getContactIconUrl(contact.slug, contact.updatedAt)}
+                      alt={`${contact.name} icon`}
+                      onError={() => setIconPreviewFailed(true)}
+                    />
+                  ) : (
+                    <p className={styles.hintText}>No icon</p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
-          <button className={styles.button} type="submit">Save</button>
-          {saveNotice ? <p className={styles.success}>{saveNotice}</p> : null}
-          {saveError ? <p className={styles.error}>{saveError}</p> : null}
+
+          <div className={styles.sectionCard}>
+            <h2 className={styles.sectionTitle}>Instruction</h2>
+            <div className={styles.field}>
+              <label className={styles.fieldLabel} htmlFor="edit-contact-instruction">Instruction</label>
+              <textarea
+                id="edit-contact-instruction"
+                className={styles.textarea}
+                name="instruction"
+                defaultValue={contact.instruction}
+                rows={6}
+              />
+            </div>
+          </div>
+
+          <div className={styles.actionsRow}>
+            <button className={styles.button} type="submit">Save</button>
+            {saveNotice ? <p className={styles.success}>{saveNotice}</p> : null}
+            {saveError ? <p className={styles.error}>{saveError}</p> : null}
+          </div>
         </form>
       ) : null}
     </div>

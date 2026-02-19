@@ -98,7 +98,7 @@
 .senderDotGroup {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
 }
 
 .senderDot {
@@ -110,8 +110,8 @@
 }
 
 .senderIcon {
-  width: 16px;
-  height: 16px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   object-fit: cover;

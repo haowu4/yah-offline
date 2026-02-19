@@ -1,0 +1,36 @@
+.wrap {
+  position: relative;
+}
+
+.options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+  padding: 6px;
+  margin: 0;
+  list-style: none;
+}
+
+.option {
+  cursor: pointer;
+  min-height: 36px;
+  padding: 9px 12px;
+  border-radius: 2px;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+}
+
+.optionActive {
+  background: #eef3ff;
+}

@@ -51,6 +51,21 @@
   margin: 0 0 16px;
 }
 
+.sectionCard {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -68,6 +83,19 @@
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rowThree {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.iconGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  align-items: start;
 }
 
 .input,
@@ -209,8 +237,40 @@
   display: block;
 }
 
+.hintText {
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+}
+
+.iconPreviewBox {
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.actionsRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 @media (max-width: 720px) {
   .row {
+    grid-template-columns: 1fr;
+  }
+
+  .rowThree {
+    grid-template-columns: 1fr;
+  }
+
+  .iconGrid {
     grid-template-columns: 1fr;
   }
 }

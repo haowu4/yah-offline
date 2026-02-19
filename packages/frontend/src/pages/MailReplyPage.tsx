@@ -1,10 +1,11 @@
 import { MarkdownPreview } from '@ootc/markdown'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { FiPaperclip } from 'react-icons/fi'
 import { getAttachment, getReply } from '../lib/api/mail'
 import type { ApiMailAttachmentSummary, ApiMailReply } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
+import { MailAttachmentPreview } from '../components/MailAttachmentPreview'
+import type { InlineAttachmentPreview } from '../components/MailAttachmentPreview'
 import styles from './MailReplyPage.module.css'
 
 export function MailReplyPage() {
@@ -14,9 +15,7 @@ export function MailReplyPage() {
   const replyId = Number.parseInt(params.replyId ?? '', 10)
   const [reply, setReply] = useState<ApiMailReply | null>(null)
   const [attachments, setAttachments] = useState<ApiMailAttachmentSummary[]>([])
-  const [attachmentPreviewById, setAttachmentPreviewById] = useState<
-    Record<number, { kind: 'text' | 'image'; textSnippet: string | null; imageSrc: string | null }>
-  >({})
+  const [attachmentPreviewById, setAttachmentPreviewById] = useState<Record<number, InlineAttachmentPreview>>({})
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -56,7 +55,7 @@ export function MailReplyPage() {
           attachmentSlug: item.slug,
         })
         const detail = payload.attachment
-        const preview =
+        const preview: InlineAttachmentPreview =
           detail.kind === 'image'
             ? {
                 kind: 'image' as const,
@@ -119,53 +118,29 @@ export function MailReplyPage() {
             </span>
           </section>
 
-          {(attachments.length ?? 0) > 0 ? (
-            <section className={styles.attachments}>
-              <h2 className={styles.sectionTitle}>Attachments</h2>
-              <div className={styles.attachmentRow}>
-                {attachments.map((attachment) => (
-                  <div key={attachment.id} className={styles.attachmentCard}>
-                    <Link
-                      className={styles.attachmentChip}
-                      to={`/mail/thread/${threadUid}/reply/${replyId}/attachment/${attachment.slug}`}
-                    >
-                      <FiPaperclip />
-                      <span>{attachment.filename}</span>
-                      <span className={styles.badge}>{attachment.kind}</span>
-                    </Link>
-                    {attachmentPreviewById[attachment.id]?.kind === 'image' &&
-                    attachmentPreviewById[attachment.id].imageSrc ? (
-                      <Link
-                        className={styles.attachmentPreviewLink}
-                        to={`/mail/thread/${threadUid}/reply/${replyId}/attachment/${attachment.slug}`}
-                      >
-                        <img
-                          className={styles.attachmentImagePreview}
-                          src={attachmentPreviewById[attachment.id].imageSrc ?? ''}
-                          alt={attachment.filename}
-                        />
-                      </Link>
-                    ) : null}
-                    {attachmentPreviewById[attachment.id]?.kind === 'text' ? (
-                      <Link
-                        className={styles.attachmentTextPreview}
-                        to={`/mail/thread/${threadUid}/reply/${replyId}/attachment/${attachment.slug}`}
-                      >
-                        {attachmentPreviewById[attachment.id].textSnippet || '(empty text file)'}
-                      </Link>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           <section className={styles.contentCard}>
             <h2 className={styles.sectionTitle}>Content</h2>
             <div className={styles.markdown}>
               <MarkdownPreview content={reply.content} />
             </div>
           </section>
+
+          {(attachments.length ?? 0) > 0 ? (
+            <section className={styles.attachments}>
+              <h2 className={styles.sectionTitle}>Attachments</h2>
+              <div className={styles.attachmentRow}>
+                {attachments.map((attachment) => (
+                  <MailAttachmentPreview
+                    key={attachment.id}
+                    threadUid={threadUid}
+                    replyId={replyId}
+                    attachment={attachment}
+                    preview={attachmentPreviewById[attachment.id]}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
         </>
       ) : (
         <p className={styles.statusLine}>Loading...</p>

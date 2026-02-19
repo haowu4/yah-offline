@@ -1,7 +1,7 @@
 import { MarkdownPreview } from '@ootc/markdown'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { FiArrowDown, FiArrowUp, FiPaperclip } from 'react-icons/fi'
+import { FiArrowDown, FiArrowUp } from 'react-icons/fi'
 import {
   createReply,
   createThread,
@@ -17,6 +17,8 @@ import {
 import type { ApiMailAttachmentSummary, ApiMailContact, ApiMailReply } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import { useMailCtx } from '../ctx/MailCtx'
+import { MailAttachmentPreview } from '../components/MailAttachmentPreview'
+import type { InlineAttachmentPreview } from '../components/MailAttachmentPreview'
 import styles from './MailThreadPage.module.css'
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -56,9 +58,7 @@ export function MailThreadPage() {
   const [threadUidState, setThreadUidState] = useState<string | null>(null)
   const [replies, setReplies] = useState<ApiMailReply[]>([])
   const [attachmentsByReply, setAttachmentsByReply] = useState<Record<number, ApiMailAttachmentSummary[]>>({})
-  const [attachmentPreviewById, setAttachmentPreviewById] = useState<
-    Record<number, { kind: 'text' | 'image'; mimeType: string; textSnippet: string | null; imageSrc: string | null }>
-  >({})
+  const [attachmentPreviewById, setAttachmentPreviewById] = useState<Record<number, InlineAttachmentPreview>>({})
   const [contacts, setContacts] = useState<ApiMailContact[]>([])
   const [models, setModels] = useState<string[]>([])
   const [contactInput, setContactInput] = useState('')
@@ -138,17 +138,15 @@ export function MailThreadPage() {
           attachmentSlug: item.slug,
         })
         const detail = payload.attachment
-        const preview =
+        const preview: InlineAttachmentPreview =
           detail.kind === 'image'
             ? {
                 kind: 'image' as const,
-                mimeType: detail.mimeType,
                 textSnippet: null,
                 imageSrc: detail.base64Content ? `data:${detail.mimeType};base64,${detail.base64Content}` : null,
               }
             : {
                 kind: 'text' as const,
-                mimeType: detail.mimeType,
                 textSnippet: (detail.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 180),
                 imageSrc: null,
               }
@@ -351,36 +349,13 @@ export function MailThreadPage() {
                   {(attachmentsByReply[reply.id]?.length ?? 0) > 0 ? (
                     <div className={styles.attachmentRow}>
                       {(attachmentsByReply[reply.id] || []).map((attachment) => (
-                        <div key={attachment.id} className={styles.attachmentCard}>
-                          <Link
-                            className={styles.attachmentChip}
-                            to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}/attachment/${attachment.slug}`}
-                          >
-                            <FiPaperclip />
-                            <span>{attachment.filename}</span>
-                          </Link>
-                          {attachmentPreviewById[attachment.id]?.kind === 'image' &&
-                          attachmentPreviewById[attachment.id].imageSrc ? (
-                            <Link
-                              className={styles.attachmentPreviewLink}
-                              to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}/attachment/${attachment.slug}`}
-                            >
-                              <img
-                                className={styles.attachmentImagePreview}
-                                src={attachmentPreviewById[attachment.id].imageSrc ?? ''}
-                                alt={attachment.filename}
-                              />
-                            </Link>
-                          ) : null}
-                          {attachmentPreviewById[attachment.id]?.kind === 'text' ? (
-                            <Link
-                              className={styles.attachmentTextPreview}
-                              to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}/attachment/${attachment.slug}`}
-                            >
-                              {attachmentPreviewById[attachment.id].textSnippet || '(empty text file)'}
-                            </Link>
-                          ) : null}
-                        </div>
+                        <MailAttachmentPreview
+                          key={attachment.id}
+                          threadUid={effectiveThreadUid ?? ''}
+                          replyId={reply.id}
+                          attachment={attachment}
+                          preview={attachmentPreviewById[attachment.id]}
+                        />
                       ))}
                     </div>
                   ) : null}

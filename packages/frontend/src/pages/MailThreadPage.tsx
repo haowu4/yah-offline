@@ -1,6 +1,7 @@
 import { MarkdownPreview } from '@ootc/markdown'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { FiArrowDown, FiArrowUp } from 'react-icons/fi'
 import {
   createReply,
   createThread,
@@ -58,6 +59,9 @@ export function MailThreadPage() {
   const [error, setError] = useState<string | null>(null)
   const [iconLoadFailures, setIconLoadFailures] = useState<Record<number, boolean>>({})
   const [newReplyIds, setNewReplyIds] = useState<Record<number, boolean>>({})
+  const mainColumnRef = useRef<HTMLDivElement | null>(null)
+  const messageListRef = useRef<HTMLUListElement | null>(null)
+  const composerRef = useRef<HTMLElement | null>(null)
   const autoReadThreadUidRef = useRef<string | null>(null)
 
   const threadUid = params.threadId ?? null
@@ -162,95 +166,97 @@ export function MailThreadPage() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <div className={styles.subjectRow}>
-          <h1 className={styles.subject}>{threadTitle || 'New thread'}</h1>
-          <span className={styles.threadChip}>
-            {replies.filter((reply) => reply.role === 'assistant').length} assistant replies
-          </span>
-        </div>
-        <div className={styles.toolbar}>
-          {effectiveThreadUid ? <Link to={`/mail/thread/${effectiveThreadUid}/attachment`}>Attachments</Link> : null}
-        </div>
-      </header>
+      <div className={styles.contentWrap}>
+        <div className={styles.mainColumn} ref={mainColumnRef}>
+          <header className={styles.header}>
+            <div className={styles.subjectRow}>
+              <h1 className={styles.subject}>{threadTitle || 'New thread'}</h1>
+              <span className={styles.threadChip}>
+                {replies.filter((reply) => reply.role === 'assistant').length} assistant replies
+              </span>
+            </div>
+            <div className={styles.toolbar}>
+              {effectiveThreadUid ? <Link to={`/mail/thread/${effectiveThreadUid}/attachment`}>Attachments</Link> : null}
+            </div>
+          </header>
 
-      <section className={styles.threadBody}>
-        <ul className={styles.messageList}>
-          {replies.map((reply) => (
-            <li
-              key={reply.id}
-              className={`${styles.messageItem} ${reply.role === 'assistant' ? styles.messageItemAssistant : styles.messageItemUser} ${newReplyIds[reply.id] ? styles.messageItemNew : ''}`}
-            >
-              <div className={styles.messageHeader}>
-                <div className={styles.sender}>
-                  <span
-                    className={styles.senderAvatar}
-                    style={
-                      reply.role === 'assistant' && reply.contact?.color
-                        ? {
-                            borderColor: colorTone(reply.contact.color, 0.5),
-                            background: colorTone(reply.contact.color, 0.18),
-                          }
-                        : undefined
-                    }
-                  >
-                    {reply.role === 'assistant' &&
-                    reply.contact?.iconLocation &&
-                    !iconLoadFailures[reply.id] ? (
-                      <img
-                        className={styles.senderAvatarImage}
-                        src={getContactIconUrl(reply.contact.slug, reply.contact.updatedAt)}
-                        alt={reply.contact.name}
-                        onError={() => {
-                          setIconLoadFailures((current) => ({ ...current, [reply.id]: true }))
-                        }}
-                      />
-                    ) : reply.role === 'assistant' ? (
-                      'A'
-                    ) : (
-                      'U'
-                    )}
-                  </span>
-                  <div className={styles.senderMeta}>
-                    <span className={styles.messageRole}>{reply.role === 'assistant' ? 'Assistant' : 'You'}</span>
-                    {reply.contact ? (
-                      <span className={styles.senderSub}>
-                        <span
-                          className={styles.contactDot}
-                          style={
-                            reply.role === 'assistant' && reply.contact?.color
-                              ? { background: reply.contact.color }
-                              : undefined
-                          }
-                        />
-                        {reply.contact.name}
+          <section className={styles.threadBody}>
+            <ul className={styles.messageList} ref={messageListRef}>
+              {replies.map((reply) => (
+                <li
+                  key={reply.id}
+                  className={`${styles.messageItem} ${reply.role === 'assistant' ? styles.messageItemAssistant : styles.messageItemUser} ${newReplyIds[reply.id] ? styles.messageItemNew : ''}`}
+                >
+                  <div className={styles.messageHeader}>
+                    <div className={styles.sender}>
+                      <span
+                        className={styles.senderAvatar}
+                        style={
+                          reply.role === 'assistant' && reply.contact?.color
+                            ? {
+                                borderColor: colorTone(reply.contact.color, 0.5),
+                                background: colorTone(reply.contact.color, 0.18),
+                              }
+                            : undefined
+                        }
+                      >
+                        {reply.role === 'assistant' &&
+                        reply.contact?.iconLocation &&
+                        !iconLoadFailures[reply.id] ? (
+                          <img
+                            className={styles.senderAvatarImage}
+                            src={getContactIconUrl(reply.contact.slug, reply.contact.updatedAt)}
+                            alt={reply.contact.name}
+                            onError={() => {
+                              setIconLoadFailures((current) => ({ ...current, [reply.id]: true }))
+                            }}
+                          />
+                        ) : reply.role === 'assistant' ? (
+                          'A'
+                        ) : (
+                          'U'
+                        )}
                       </span>
-                    ) : null}
+                      <div className={styles.senderMeta}>
+                        <span className={styles.messageRole}>{reply.role === 'assistant' ? 'Assistant' : 'You'}</span>
+                        {reply.contact ? (
+                          <span className={styles.senderSub}>
+                            <span
+                              className={styles.contactDot}
+                              style={
+                                reply.role === 'assistant' && reply.contact?.color
+                                  ? { background: reply.contact.color }
+                                  : undefined
+                              }
+                            />
+                            {reply.contact.name}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className={styles.headerRight}>
+                      {newReplyIds[reply.id] ? <span className={`${styles.badge} ${styles.newBadge}`}>New</span> : null}
+                      {reply.unread ? <span className={`${styles.badge} ${styles.unread}`}>Unread</span> : null}
+                      <span className={styles.time}>{new Date(reply.createdAt).toLocaleString()}</span>
+                    </div>
                   </div>
-                </div>
-                <div className={styles.headerRight}>
-                  {newReplyIds[reply.id] ? <span className={`${styles.badge} ${styles.newBadge}`}>New</span> : null}
-                  {reply.unread ? <span className={`${styles.badge} ${styles.unread}`}>Unread</span> : null}
-                  <span className={styles.time}>{new Date(reply.createdAt).toLocaleString()}</span>
-                </div>
-              </div>
-              <div className={styles.messageContent}>
-                <MarkdownPreview content={reply.content} />
-              </div>
-              <div className={styles.metaLink}>
-                <Link to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}`}>View full reply</Link>
-              </div>
-            </li>
-          ))}
-          {replies.length === 0 ? <li className={styles.empty}>No messages yet.</li> : null}
-        </ul>
-      </section>
+                  <div className={styles.messageContent}>
+                    <MarkdownPreview content={reply.content} />
+                  </div>
+                  <div className={styles.metaLink}>
+                    <Link to={`/mail/thread/${effectiveThreadUid ?? ''}/reply/${reply.id}`}>View full reply</Link>
+                  </div>
+                </li>
+              ))}
+              {replies.length === 0 ? <li className={styles.empty}>No messages yet.</li> : null}
+            </ul>
+          </section>
 
-      <section className={styles.composer}>
-        <h2 className={styles.composerTitle}>Reply</h2>
-        <form
-          className={styles.formGrid}
-          onSubmit={(event) => {
+          <section className={styles.composer} ref={composerRef}>
+            <h2 className={styles.composerTitle}>Reply</h2>
+            <form
+              className={styles.formGrid}
+              onSubmit={(event) => {
             event.preventDefault()
             const form = new FormData(event.currentTarget)
             const content = String(form.get('content') ?? '').trim()
@@ -295,63 +301,98 @@ export function MailThreadPage() {
               .catch((err: unknown) => {
                 setError(err instanceof Error ? err.message : 'Failed to submit message')
               })
-          }}
-        >
-          {!effectiveThreadUid ? (
-            <input className={styles.input} name="title" placeholder="Thread title (optional)" />
-          ) : null}
-          <div className={styles.row}>
-            <>
-              <input
-                className={styles.input}
-                name="contact"
-                list="mail-contacts"
-                placeholder="Contact (name or slug)"
-                value={contactInput}
-                onChange={(event) => setContactInput(event.target.value)}
-              />
-              <datalist id="mail-contacts">
-                {contacts.map((contact) => (
-                  <option key={contact.id} value={contact.name} label={contact.slug} />
-                ))}
-              </datalist>
-            </>
-            <>
-              <input className={styles.input} name="model" list="mail-models" placeholder="Model" />
-              <datalist id="mail-models">
-                {models.map((model) => (
-                  <option key={model} value={model} />
-                ))}
-              </datalist>
-            </>
-          </div>
-          <textarea className={styles.textarea} name="content" rows={8} placeholder="Write mail..." />
-          <div className={styles.actions}>
-            <button className={styles.button} type="submit">
-              Send
+              }}
+            >
+              {!effectiveThreadUid ? (
+                <input className={styles.input} name="title" placeholder="Thread title (optional)" />
+              ) : null}
+              <div className={styles.row}>
+                <>
+                  <input
+                    className={styles.input}
+                    name="contact"
+                    list="mail-contacts"
+                    placeholder="Contact (name or slug)"
+                    value={contactInput}
+                    onChange={(event) => setContactInput(event.target.value)}
+                  />
+                  <datalist id="mail-contacts">
+                    {contacts.map((contact) => (
+                      <option key={contact.id} value={contact.name} label={contact.slug} />
+                    ))}
+                  </datalist>
+                </>
+                <>
+                  <input className={styles.input} name="model" list="mail-models" placeholder="Model" />
+                  <datalist id="mail-models">
+                    {models.map((model) => (
+                      <option key={model} value={model} />
+                    ))}
+                  </datalist>
+                </>
+              </div>
+              <textarea className={styles.textarea} name="content" rows={8} placeholder="Write mail..." />
+              <div className={styles.actions}>
+                <button className={styles.button} type="submit">
+                  Send
+                </button>
+                {effectiveThreadUid ? (
+                  <button
+                    className={styles.buttonSecondary}
+                    type="button"
+                    onClick={() => {
+                      void markThreadRead(effectiveThreadUid)
+                        .then(() => getThread(effectiveThreadUid))
+                        .then((payload) => {
+                          setReplies(payload.replies)
+                        })
+                        .catch((err: unknown) => {
+                          setError(err instanceof Error ? err.message : 'Failed to mark as read')
+                        })
+                    }}
+                  >
+                    Mark thread read
+                  </button>
+                ) : null}
+              </div>
+              {error ? <p className={styles.error}>{error}</p> : null}
+            </form>
+          </section>
+        </div>
+
+        <aside className={styles.sideColumn} aria-label="Thread navigation controls">
+          <div className={styles.scrollDock}>
+            <button
+              type="button"
+              className={styles.scrollButton}
+              aria-label="Scroll to top"
+              title="Scroll to top"
+              onClick={() => {
+                const container = mainColumnRef.current
+                if (!container) return
+                container.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            >
+              <FiArrowUp />
             </button>
-            {effectiveThreadUid ? (
-              <button
-                className={styles.buttonSecondary}
-                type="button"
-                onClick={() => {
-                  void markThreadRead(effectiveThreadUid)
-                    .then(() => getThread(effectiveThreadUid))
-                    .then((payload) => {
-                      setReplies(payload.replies)
-                    })
-                    .catch((err: unknown) => {
-                      setError(err instanceof Error ? err.message : 'Failed to mark as read')
-                    })
-                }}
-              >
-                Mark thread read
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className={styles.scrollButton}
+              aria-label="Scroll to bottom"
+              title="Scroll to bottom"
+              onClick={() => {
+                const container = mainColumnRef.current
+                const composer = composerRef.current
+                if (!container || !composer) return
+                const delta = composer.getBoundingClientRect().top - container.getBoundingClientRect().top
+                container.scrollTo({ top: container.scrollTop + delta, behavior: 'smooth' })
+              }}
+            >
+              <FiArrowDown />
+            </button>
           </div>
-          {error ? <p className={styles.error}>{error}</p> : null}
-        </form>
-      </section>
+        </aside>
+      </div>
     </div>
   )
 }

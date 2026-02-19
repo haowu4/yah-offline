@@ -12,6 +12,10 @@ export function SearchPage() {
   const queryFromUrl = params.get('query')?.trim() ?? ''
 
   useEffect(() => {
+    document.title = queryFromUrl ? `${queryFromUrl} | Search | yah` : 'Search | yah'
+  }, [queryFromUrl])
+
+  useEffect(() => {
     if (queryFromUrl) return
     if (
       search.query ||

@@ -11,6 +11,10 @@ export function MailContactListPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    document.title = 'Mail Contacts | yah'
+  }, [])
+
+  useEffect(() => {
     setBreadcrumbs([
       { label: 'Mail', to: '/mail' },
       { label: 'Contacts' },

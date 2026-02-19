@@ -76,6 +76,15 @@ export function MailThreadPage() {
   const effectiveThreadUid = threadUidState ?? threadUid
 
   useEffect(() => {
+    if (!effectiveThreadUid) {
+      document.title = 'New Thread | Mail | yah'
+      return
+    }
+    const shortId = effectiveThreadUid.slice(0, 8)
+    document.title = `${threadTitle || `Thread ${shortId}`} | Mail | yah`
+  }, [effectiveThreadUid, threadTitle])
+
+  useEffect(() => {
     void Promise.all([listContacts(), listModelCandidates(), getComposerConfig()])
       .then(([contactsPayload, modelsPayload, composerPayload]) => {
         setContacts(contactsPayload.contacts)

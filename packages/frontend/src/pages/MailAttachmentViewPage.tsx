@@ -26,6 +26,12 @@ export function MailAttachmentViewPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    document.title = attachment?.filename
+      ? `${attachment.filename} | Attachment | Mail | yah`
+      : 'Attachment | Mail | yah'
+  }, [attachment?.filename])
+
+  useEffect(() => {
     setBreadcrumbs([
       { label: 'Mail', to: '/mail' },
       { label: `Thread ${threadUid.slice(0, 8)}`, to: `/mail/thread/${threadUid}` },

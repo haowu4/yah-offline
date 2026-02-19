@@ -61,6 +61,10 @@ export function MailPage() {
   const keyword = params.get('keyword') ?? ''
   const unread = params.get('unread') === '1'
 
+  useEffect(() => {
+    document.title = unread ? 'Unread Mail | yah' : 'Mail Inbox | yah'
+  }, [unread])
+
   const selectedContact = contacts.find((item) => item.slug === selectedContactSlug) ?? null
   const filteredContacts = contactQuery.trim()
     ? contacts.filter((item) => {

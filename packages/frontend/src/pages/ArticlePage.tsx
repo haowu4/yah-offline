@@ -24,6 +24,10 @@ export function ArticlePage() {
   const queryText = searchParams.get('query') ?? ''
 
   useEffect(() => {
+    document.title = state.payload?.article.title ? `${state.payload.article.title} | yah` : 'Article | yah'
+  }, [state.payload?.article.title])
+
+  useEffect(() => {
     if (!slug) {
       setState({ isLoading: false, error: 'Missing slug', payload: null })
       return

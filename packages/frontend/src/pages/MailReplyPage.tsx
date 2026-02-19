@@ -19,6 +19,10 @@ export function MailReplyPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    document.title = Number.isInteger(replyId) ? `Reply #${replyId} | Mail | yah` : 'Reply | Mail | yah'
+  }, [replyId])
+
+  useEffect(() => {
     setBreadcrumbs([
       { label: 'Mail', to: '/mail' },
       { label: `Thread ${threadUid.slice(0, 8)}`, to: `/mail/thread/${threadUid}` },

@@ -29,6 +29,10 @@ export function MailContactDetailPage() {
   const slug = params.slug ?? ''
 
   useEffect(() => {
+    document.title = contact?.name ? `Edit ${contact.name} | Mail | yah` : 'Edit Contact | Mail | yah'
+  }, [contact?.name])
+
+  useEffect(() => {
     setBreadcrumbs([
       { label: 'Mail', to: '/mail' },
       { label: 'Contacts', to: '/mail/contact' },

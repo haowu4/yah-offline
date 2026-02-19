@@ -13,6 +13,10 @@ export function MailAttachmentListPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    document.title = 'Thread Attachments | Mail | yah'
+  }, [])
+
+  useEffect(() => {
     setBreadcrumbs([
       { label: 'Mail', to: '/mail' },
       { label: `Thread ${threadUid.slice(0, 8)}`, to: `/mail/thread/${threadUid}` },

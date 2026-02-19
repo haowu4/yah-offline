@@ -32,6 +32,10 @@ export function ConfigPage() {
   const [pendingDeleteKey, setPendingDeleteKey] = useState<string | null>(null)
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({})
 
+  useEffect(() => {
+    document.title = 'Config | yah'
+  }, [])
+
   const fetchConfigs = async () => {
     setIsLoading(true)
     try {

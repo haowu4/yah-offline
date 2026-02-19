@@ -16,6 +16,10 @@ export function MailNewContactPage() {
   const [defaultModel, setDefaultModel] = useState('')
 
   useEffect(() => {
+    document.title = 'New Contact | Mail | yah'
+  }, [])
+
+  useEffect(() => {
     setBreadcrumbs([
       { label: 'Mail', to: '/mail' },
       { label: 'Contacts', to: '/mail/contact' },

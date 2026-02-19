@@ -33,11 +33,12 @@ export const migrations: Migration[] = [
 
         CREATE TABLE IF NOT EXISTS article (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            intent_id INTEGER NOT NULL,
+            intent_id INTEGER,
             title TEXT NOT NULL,
+            slug TEXT NOT NULL UNIQUE,
             content TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE CASCADE
+            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE SET NULL
         );
         CREATE INDEX IF NOT EXISTS idx_article_intent_id ON article(intent_id);
         `,
@@ -45,13 +46,7 @@ export const migrations: Migration[] = [
     {
         name: "002_article_slug",
         sql: `
-        ALTER TABLE article ADD COLUMN slug TEXT;
-
-        UPDATE article
-        SET slug = lower(trim(replace(title, ' ', '-')))
-        WHERE slug IS NULL OR slug = '';
-
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_article_slug_unique ON article(slug);
+        -- no-op: slug is created in 001_init for fresh databases
         `,
     },
     {
@@ -61,6 +56,7 @@ export const migrations: Migration[] = [
         DROP TABLE IF EXISTS mail_message;
         DROP TABLE IF EXISTS mail_thread;
         DROP TABLE IF EXISTS contact;
+        DROP TABLE IF EXISTS mail_search_fts;
 
         CREATE TABLE IF NOT EXISTS mail_contact (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +153,103 @@ export const migrations: Migration[] = [
             payload_json TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS mail_search_fts USING fts5(
+            thread_id UNINDEXED,
+            kind UNINDEXED,
+            source_id UNINDEXED,
+            content
+        );
+
+        INSERT INTO mail_search_fts (thread_id, kind, source_id, content)
+        SELECT id, 'thread', id, COALESCE(title, '')
+        FROM mail_thread;
+
+        INSERT INTO mail_search_fts (thread_id, kind, source_id, content)
+        SELECT thread_id, 'reply', id, COALESCE(content, '')
+        FROM mail_reply;
+
+        INSERT INTO mail_search_fts (thread_id, kind, source_id, content)
+        SELECT
+            r.thread_id,
+            'attachment',
+            a.id,
+            trim(COALESCE(a.filename, '') || ' ' || COALESCE(a.text_content, ''))
+        FROM mail_attachment a
+        JOIN mail_reply r ON r.id = a.reply_id;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_thread_insert
+        AFTER INSERT ON mail_thread
+        BEGIN
+            INSERT INTO mail_search_fts (thread_id, kind, source_id, content)
+            VALUES (new.id, 'thread', new.id, COALESCE(new.title, ''));
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_thread_update
+        AFTER UPDATE OF title ON mail_thread
+        BEGIN
+            UPDATE mail_search_fts
+            SET content = COALESCE(new.title, '')
+            WHERE kind = 'thread' AND source_id = new.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_thread_delete
+        AFTER DELETE ON mail_thread
+        BEGIN
+            DELETE FROM mail_search_fts
+            WHERE kind = 'thread' AND source_id = old.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_reply_insert
+        AFTER INSERT ON mail_reply
+        BEGIN
+            INSERT INTO mail_search_fts (thread_id, kind, source_id, content)
+            VALUES (new.thread_id, 'reply', new.id, COALESCE(new.content, ''));
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_reply_update
+        AFTER UPDATE OF thread_id, content ON mail_reply
+        BEGIN
+            UPDATE mail_search_fts
+            SET thread_id = new.thread_id,
+                content = COALESCE(new.content, '')
+            WHERE kind = 'reply' AND source_id = new.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_reply_delete
+        AFTER DELETE ON mail_reply
+        BEGIN
+            DELETE FROM mail_search_fts
+            WHERE kind = 'reply' AND source_id = old.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_attachment_insert
+        AFTER INSERT ON mail_attachment
+        BEGIN
+            INSERT INTO mail_search_fts (thread_id, kind, source_id, content)
+            VALUES (
+                (SELECT thread_id FROM mail_reply WHERE id = new.reply_id),
+                'attachment',
+                new.id,
+                trim(COALESCE(new.filename, '') || ' ' || COALESCE(new.text_content, ''))
+            );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_attachment_update
+        AFTER UPDATE OF reply_id, filename, text_content ON mail_attachment
+        BEGIN
+            UPDATE mail_search_fts
+            SET thread_id = (SELECT thread_id FROM mail_reply WHERE id = new.reply_id),
+                content = trim(COALESCE(new.filename, '') || ' ' || COALESCE(new.text_content, ''))
+            WHERE kind = 'attachment' AND source_id = new.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_mail_search_attachment_delete
+        AFTER DELETE ON mail_attachment
+        BEGIN
+            DELETE FROM mail_search_fts
+            WHERE kind = 'attachment' AND source_id = old.id;
+        END;
         `,
     },
     {

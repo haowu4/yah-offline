@@ -181,6 +181,7 @@ export async function listThreads(args?: {
   to?: string
   keyword?: string
   unread?: boolean
+  tzOffsetMinutes?: number
 }): Promise<{ threads: ApiMailThreadSummary[]; unread: ApiUnreadStats }> {
   const params = new URLSearchParams()
   if (args?.contact) params.set('contact', args.contact)
@@ -188,6 +189,11 @@ export async function listThreads(args?: {
   if (args?.to) params.set('to', args.to)
   if (args?.keyword) params.set('keyword', args.keyword)
   if (args?.unread) params.set('unread', '1')
+  if (typeof args?.tzOffsetMinutes === 'number' && Number.isFinite(args.tzOffsetMinutes)) {
+    params.set('tzOffsetMinutes', String(Math.trunc(args.tzOffsetMinutes)))
+  } else if (typeof window !== 'undefined') {
+    params.set('tzOffsetMinutes', String(new Date().getTimezoneOffset()))
+  }
 
   const suffix = params.toString() ? `?${params.toString()}` : ''
   return apiFetch(`/mail/thread${suffix}`)

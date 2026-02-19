@@ -874,13 +874,25 @@ export class MailDBClient {
 
   listThreads(args: {
     contactSlug?: string
-    from?: string
-    to?: string
+    fromReplyAt?: string
+    toReplyAtExclusive?: string
     keyword?: string
     unread?: boolean
   }): MailThreadSummary[] {
     const where: string[] = []
     const params: Array<string | number> = []
+
+    const normalizedKeyword = args.keyword?.trim()
+
+    const ftsQuery = (() => {
+      if (!normalizedKeyword) return null
+      const tokens = normalizedKeyword
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter(Boolean)
+      if (tokens.length === 0) return null
+      return tokens.map((token) => `"${token.replace(/"/g, "\"\"")}"*`).join(" AND ")
+    })()
 
     if (args.contactSlug) {
       where.push(
@@ -894,28 +906,35 @@ export class MailDBClient {
       params.push(args.contactSlug)
     }
 
-    if (args.from) {
-      where.push("t.updated_at >= ?")
-      params.push(args.from)
-    }
-
-    if (args.to) {
-      where.push("t.updated_at <= ?")
-      params.push(args.to)
-    }
-
-    if (args.keyword) {
+    if (args.fromReplyAt || args.toReplyAtExclusive) {
+      const replyDateWhere = ["rr.thread_id = t.id"]
+      if (args.fromReplyAt) {
+        replyDateWhere.push("rr.created_at >= ?")
+        params.push(args.fromReplyAt)
+      }
+      if (args.toReplyAtExclusive) {
+        replyDateWhere.push("rr.created_at < ?")
+        params.push(args.toReplyAtExclusive)
+      }
       where.push(
-        `(
-          t.title LIKE ?
-          OR EXISTS (
-              SELECT 1 FROM mail_reply rr
-              WHERE rr.thread_id = t.id AND rr.content LIKE ?
-          )
+        `EXISTS (
+          SELECT 1
+          FROM mail_reply rr
+          WHERE ${replyDateWhere.join(" AND ")}
         )`
       )
-      const pattern = `%${args.keyword}%`
-      params.push(pattern, pattern)
+    }
+
+    if (ftsQuery) {
+      where.push(
+        `EXISTS (
+          SELECT 1
+          FROM mail_search_fts ms
+          WHERE ms.thread_id = t.id
+            AND ms.content MATCH ?
+        )`
+      )
+      params.push(ftsQuery)
     }
 
     if (args.unread) {

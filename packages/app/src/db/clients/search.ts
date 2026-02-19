@@ -183,24 +183,27 @@ export class SearchDBClient {
     }
 
     createArticle(args: {
-        intentId: number
+        intentId?: number | null
         title: string
         slug: string
         content: string
     }): ArticleRecord {
-        const existing = this.db
-            .prepare(
-                `
-                SELECT id
-                FROM article
-                WHERE intent_id = ?
-                ORDER BY id ASC
-                LIMIT 1
-                `
-            )
-            .get(args.intentId) as { id: number } | undefined
-        if (existing) {
-            return this.getArticleById(existing.id)
+        const intentId = args.intentId ?? null
+        if (intentId !== null) {
+            const existing = this.db
+                .prepare(
+                    `
+                    SELECT id
+                    FROM article
+                    WHERE intent_id = ?
+                    ORDER BY id ASC
+                    LIMIT 1
+                    `
+                )
+                .get(intentId) as { id: number } | undefined
+            if (existing) {
+                return this.getArticleById(existing.id)
+            }
         }
 
         const title = args.title.trim()
@@ -218,7 +221,7 @@ export class SearchDBClient {
                 VALUES (?, ?, ?, ?)
                 `
             )
-            .run(args.intentId, title, uniqueSlug, content)
+            .run(intentId, title, uniqueSlug, content)
 
         return this.getArticleById(result.lastInsertRowid as number)
     }
@@ -235,7 +238,7 @@ export class SearchDBClient {
             .get(id) as
             | {
                   id: number
-                  intent_id: number
+                  intent_id: number | null
                   title: string
                   slug: string
                   content: string
@@ -316,41 +319,47 @@ export class SearchDBClient {
                     q.value AS query_value,
                     q.created_at AS query_created_at
                 FROM article a
-                JOIN query_intent qi ON qi.id = a.intent_id
-                JOIN query q ON q.id = qi.query_id
+                LEFT JOIN query_intent qi ON qi.id = a.intent_id
+                LEFT JOIN query q ON q.id = qi.query_id
                 WHERE a.slug = ?
                 `
             )
             .get(slug) as
             | {
                   article_id: number
-                  article_intent_id: number
+                  article_intent_id: number | null
                   article_title: string
                   article_slug: string
                   article_content: string
                   article_created_at: string
-                  intent_id: number
-                  intent_value: string
-                  query_id: number
-                  query_value: string
-                  query_created_at: string
+                  intent_id: number | null
+                  intent_value: string | null
+                  query_id: number | null
+                  query_value: string | null
+                  query_created_at: string | null
               }
             | undefined
 
         if (!row) return null
 
-        const relatedRows = this.db
-            .prepare(
-                `
-                SELECT id, intent
-                FROM query_intent
-                WHERE query_id = ? AND id != ?
-                ORDER BY id ASC
-                `
-            )
-            .all(row.query_id, row.intent_id) as Array<{ id: number; intent: string }>
+        const relatedRows =
+            row.query_id !== null && row.intent_id !== null
+                ? (this.db
+                      .prepare(
+                          `
+                          SELECT id, intent
+                          FROM query_intent
+                          WHERE query_id = ? AND id != ?
+                          ORDER BY id ASC
+                          `
+                      )
+                      .all(row.query_id, row.intent_id) as Array<{
+                      id: number
+                      intent: string
+                  }>)
+                : []
 
-        return {
+        const payload: ArticleDetailPayload = {
             article: {
                 id: row.article_id,
                 intentId: row.article_intent_id,
@@ -359,21 +368,29 @@ export class SearchDBClient {
                 content: row.article_content,
                 createdAt: row.article_created_at,
             },
-            intent: {
-                id: row.intent_id,
-                queryId: row.query_id,
-                intent: row.intent_value,
-            },
-            query: {
-                id: row.query_id,
-                value: row.query_value,
-                createdAt: row.query_created_at,
-            },
             relatedIntents: relatedRows.map((relatedRow) => ({
                 id: relatedRow.id,
                 intent: relatedRow.intent,
             })),
         }
+
+        if (row.intent_id !== null && row.query_id !== null && row.intent_value !== null) {
+            payload.intent = {
+                id: row.intent_id,
+                queryId: row.query_id,
+                intent: row.intent_value,
+            }
+        }
+
+        if (row.query_id !== null && row.query_value !== null && row.query_created_at !== null) {
+            payload.query = {
+                id: row.query_id,
+                value: row.query_value,
+                createdAt: row.query_created_at,
+            }
+        }
+
+        return payload
     }
 
     hasGeneratedContent(queryId: number): boolean {

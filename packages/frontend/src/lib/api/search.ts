@@ -26,18 +26,18 @@ export type ApiQueryResult = {
 export type ApiArticleDetail = {
   article: {
     id: number
-    intentId: number
+    intentId: number | null
     title: string
     slug: string
     content: string
     createdAt: string
   }
-  intent: {
+  intent?: {
     id: number
     queryId: number
     intent: string
   }
-  query: ApiQueryRecord
+  query?: ApiQueryRecord
   relatedIntents: Array<{
     id: number
     intent: string
@@ -56,7 +56,7 @@ export type SearchStreamEvent =
   | {
       type: 'article.created'
       queryId: number
-      intentId: number
+      intentId?: number
       article: {
         id: number
         title: string

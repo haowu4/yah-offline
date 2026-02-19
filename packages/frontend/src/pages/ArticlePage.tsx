@@ -65,32 +65,41 @@ export function ArticlePage() {
   }
 
   const { article, query, relatedIntents } = state.payload
+  const backToResultsHref = query
+    ? `/search?query=${encodeURIComponent(queryText || query.value)}`
+    : '/search'
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
         <div className={styles.backRow}>
-          <Link to={`/search?query=${encodeURIComponent(queryText || query.value)}`}>
-            Back to results
-          </Link>
+          <Link to={backToResultsHref}>Back to results</Link>
         </div>
         <h1>{article.title}</h1>
         <MarkdownPreview content={article.content} />
       </main>
 
       <aside className={styles.sidebar}>
-        <h3>Related query</h3>
-        <p>
-          <Link to={`/search?query=${encodeURIComponent(query.value)}`}>{query.value}</Link>
-        </p>
+        {query ? (
+          <>
+            <h3>Related query</h3>
+            <p>
+              <Link to={`/search?query=${encodeURIComponent(query.value)}`}>{query.value}</Link>
+            </p>
+          </>
+        ) : null}
 
-        <h3>Other intents</h3>
-        {relatedIntents.length === 0 ? <p>No related intents.</p> : null}
-        <ul className={styles.sidebarList}>
-          {relatedIntents.map((intent) => (
-            <li key={intent.id}>{intent.intent}</li>
-          ))}
-        </ul>
+        {query ? (
+          <>
+            <h3>Other intents</h3>
+            {relatedIntents.length === 0 ? <p>No related intents.</p> : null}
+            <ul className={styles.sidebarList}>
+              {relatedIntents.map((intent) => (
+                <li key={intent.id}>{intent.intent}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </aside>
     </div>
   )

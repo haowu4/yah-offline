@@ -54,6 +54,9 @@ async function main() {
         }
 
         const tables = db.getTableNames()
+        if (!tables.includes("mail_search_fts")) {
+            throw new Error("Expected mail_search_fts table to exist after migrations")
+        }
 
         console.log(`Migration smoke test passed (${db.kind}).`)
         console.log("Tables:", tables.join(", "))

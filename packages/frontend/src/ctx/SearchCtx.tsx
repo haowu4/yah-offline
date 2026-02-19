@@ -72,6 +72,10 @@ function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchS
   }
 
   if (event.type === 'article.created') {
+    if (event.intentId === undefined) {
+      return state
+    }
+
     return {
       ...state,
       queryIntents: state.queryIntents.map((intent) => {

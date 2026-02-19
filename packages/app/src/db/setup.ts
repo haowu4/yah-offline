@@ -58,6 +58,18 @@ export function ensureMigrationsTable(db: Database.Database) {
     }
 }
 
+export function ensureFTS5Available(db: Database.Database) {
+    try {
+        db.exec(`
+            CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_probe USING fts5(content);
+            DROP TABLE IF EXISTS _fts5_probe;
+        `)
+    } catch (error) {
+        const details = error instanceof Error ? error.message : "Unknown sqlite error"
+        throw new Error(`SQLite build does not support FTS5: ${details}`)
+    }
+}
+
 export function detectMigrationConflicts(
     db: Database.Database
 ): MigrationConflict[] {
@@ -94,6 +106,7 @@ export function detectMigrationConflicts(
 }
 
 export function runMigrations(db: Database.Database) {
+    ensureFTS5Available(db)
     ensureMigrationsTable(db)
 
     const conflicts = detectMigrationConflicts(db)

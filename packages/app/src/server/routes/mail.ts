@@ -15,7 +15,63 @@ function parseDate(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   if (!trimmed) return undefined
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return undefined
   return trimmed
+}
+
+function parseTimezoneOffsetMinutes(value: unknown): number {
+  if (typeof value !== "string") return 0
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isInteger(parsed)) return 0
+  if (parsed < -14 * 60 || parsed > 14 * 60) return 0
+  return parsed
+}
+
+function toSqliteDateTimeUTC(value: Date): string {
+  const year = value.getUTCFullYear()
+  const month = String(value.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(value.getUTCDate()).padStart(2, "0")
+  const hour = String(value.getUTCHours()).padStart(2, "0")
+  const minute = String(value.getUTCMinutes()).padStart(2, "0")
+  const second = String(value.getUTCSeconds()).padStart(2, "0")
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
+}
+
+function parseLocalDateParts(value: string): { year: number; monthIndex: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return null
+  const year = Number.parseInt(match[1], 10)
+  const month = Number.parseInt(match[2], 10)
+  const day = Number.parseInt(match[3], 10)
+  if (month < 1 || month > 12) return null
+  if (day < 1 || day > 31) return null
+  const probe = new Date(Date.UTC(year, month - 1, day))
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    return null
+  }
+  return {
+    year,
+    monthIndex: month - 1,
+    day,
+  }
+}
+
+function getUtcRangeStartFromLocalDate(localDate: string, offsetMinutes: number): string | null {
+  const parts = parseLocalDateParts(localDate)
+  if (!parts) return null
+  const utcMs = Date.UTC(parts.year, parts.monthIndex, parts.day, 0, 0, 0) + offsetMinutes * 60 * 1000
+  return toSqliteDateTimeUTC(new Date(utcMs))
+}
+
+function getUtcRangeEndExclusiveFromLocalDate(localDate: string, offsetMinutes: number): string | null {
+  const parts = parseLocalDateParts(localDate)
+  if (!parts) return null
+  const utcMs = Date.UTC(parts.year, parts.monthIndex, parts.day + 1, 0, 0, 0) + offsetMinutes * 60 * 1000
+  return toSqliteDateTimeUTC(new Date(utcMs))
 }
 
 function parseBooleanFlag(value: unknown): boolean {
@@ -250,11 +306,18 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
   })
 
   router.get("/mail/thread", (req, res) => {
+    const fromDate = parseDate(req.query.from)
+    const toDate = parseDate(req.query.to)
+    const tzOffsetMinutes = parseTimezoneOffsetMinutes(req.query.tzOffsetMinutes)
+
+    const fromReplyAt = fromDate ? getUtcRangeStartFromLocalDate(fromDate, tzOffsetMinutes) : undefined
+    const toReplyAtExclusive = toDate ? getUtcRangeEndExclusiveFromLocalDate(toDate, tzOffsetMinutes) : undefined
+
     const payload = mailDB.listThreads({
       contactSlug:
         typeof req.query.contact === "string" ? req.query.contact.trim() || undefined : undefined,
-      from: parseDate(req.query.from),
-      to: parseDate(req.query.to),
+      fromReplyAt: fromReplyAt || undefined,
+      toReplyAtExclusive: toReplyAtExclusive || undefined,
       keyword: typeof req.query.keyword === "string" ? req.query.keyword.trim() || undefined : undefined,
       unread: parseBooleanFlag(req.query.unread),
     })

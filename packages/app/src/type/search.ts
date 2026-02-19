@@ -12,7 +12,7 @@ export type QueryIntentRecord = {
 
 export type ArticleRecord = {
     id: number
-    intentId: number
+    intentId: number | null
     title: string
     slug: string
     content: string
@@ -36,8 +36,8 @@ export type QueryResultPayload = {
 
 export type ArticleDetailPayload = {
     article: ArticleRecord
-    intent: QueryIntentRecord
-    query: QueryRecord
+    intent?: QueryIntentRecord
+    query?: QueryRecord
     relatedIntents: Array<Pick<QueryIntentRecord, "id" | "intent">>
 }
 
@@ -53,7 +53,7 @@ export type SearchStreamIntentCreatedEvent = {
 export type SearchStreamArticleCreatedEvent = {
     type: "article.created"
     queryId: number
-    intentId: number
+    intentId?: number
     article: {
         id: number
         title: string

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { getContactIconUrl, listThreads } from '../lib/api/mail'
-import type { ApiMailThreadSummary } from '../lib/api/mail'
+import { Combobox, ComboboxInput, ComboboxOption, ComboboxOptions } from '@headlessui/react'
+import { getContactIconUrl, listContacts, listThreads } from '../lib/api/mail'
+import type { ApiMailContact, ApiMailThreadSummary } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
 import styles from './MailPage.module.css'
 
@@ -45,6 +46,9 @@ function toInboxSnippet(value: string): string {
 export function MailPage() {
   const { setBreadcrumbs } = useMailBreadcrumbs()
   const [params, setParams] = useSearchParams()
+  const [contacts, setContacts] = useState<ApiMailContact[]>([])
+  const [contactQuery, setContactQuery] = useState('')
+  const [selectedContactSlug, setSelectedContactSlug] = useState('')
   const [state, setState] = useState<LoadState>({
     isLoading: true,
     error: null,
@@ -57,9 +61,32 @@ export function MailPage() {
   const keyword = params.get('keyword') ?? ''
   const unread = params.get('unread') === '1'
 
+  const selectedContact = contacts.find((item) => item.slug === selectedContactSlug) ?? null
+  const filteredContacts = contactQuery.trim()
+    ? contacts.filter((item) => {
+        const token = contactQuery.trim().toLowerCase()
+        return item.name.toLowerCase().includes(token) || item.slug.toLowerCase().includes(token)
+      })
+    : contacts
+
   useEffect(() => {
     setBreadcrumbs([{ label: 'Mail', to: '/mail' }])
   }, [setBreadcrumbs])
+
+  useEffect(() => {
+    setSelectedContactSlug(contact)
+    setContactQuery('')
+  }, [contact])
+
+  useEffect(() => {
+    void listContacts()
+      .then((payload) => {
+        setContacts(payload.contacts)
+      })
+      .catch(() => {
+        setContacts([])
+      })
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -71,6 +98,7 @@ export function MailPage() {
       to: to || undefined,
       keyword: keyword || undefined,
       unread,
+      tzOffsetMinutes: new Date().getTimezoneOffset(),
     })
       .then((payload) => {
         if (!mounted) return
@@ -121,7 +149,42 @@ export function MailPage() {
               placeholder="Search mail"
               className={styles.searchInput}
             />
-            <input name="contact" defaultValue={contact} placeholder="Contact" className={styles.filterInput} />
+            <div className={styles.contactPickerWrap}>
+              <input type="hidden" name="contact" value={selectedContactSlug} />
+              <Combobox
+                value={selectedContact}
+                onChange={(value: ApiMailContact | null) => {
+                  setSelectedContactSlug(value?.slug ?? '')
+                }}
+                nullable
+              >
+                <div className={styles.comboboxShell}>
+                  <ComboboxInput
+                    className={styles.filterInput}
+                    placeholder="All contacts"
+                    displayValue={(item: ApiMailContact | null) => item?.name ?? ''}
+                    onChange={(event) => {
+                      setContactQuery(event.target.value)
+                      if (event.target.value.trim() === '') {
+                        setSelectedContactSlug('')
+                      }
+                    }}
+                  />
+                  <ComboboxOptions anchor="bottom start" className={styles.comboboxOptions}>
+                    <ComboboxOption value={null} className={styles.comboboxOption}>
+                      <span className={styles.contactOptionName}>All contacts</span>
+                      <span className={styles.contactOptionSlug}>no contact filter</span>
+                    </ComboboxOption>
+                    {filteredContacts.map((item) => (
+                      <ComboboxOption key={item.id} value={item} className={styles.comboboxOption}>
+                        <span className={styles.contactOptionName}>{item.name}</span>
+                        <span className={styles.contactOptionSlug}>{item.slug}</span>
+                      </ComboboxOption>
+                    ))}
+                  </ComboboxOptions>
+                </div>
+              </Combobox>
+            </div>
             <input name="from" defaultValue={from} type="date" className={styles.filterInput} />
             <input name="to" defaultValue={to} type="date" className={styles.filterInput} />
             <label className={styles.checkboxLabel}>
@@ -132,6 +195,7 @@ export function MailPage() {
               Filter
             </button>
           </form>
+          <p className={styles.filterHint}>Date range is interpreted in your local timezone, and the end date is inclusive.</p>
         </header>
 
         {state.error ? <p className={styles.error}>{state.error}</p> : null}

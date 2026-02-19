@@ -13,6 +13,7 @@ type MailContextValue = {
   totalUnreadThreads: number
   streamError: string | null
   toasts: MailToast[]
+  lastReplyEvent: { threadUid: string; replyId: number; at: number } | null
   dismissToast: (id: number) => void
   refreshUnread: () => Promise<void>
 }
@@ -24,6 +25,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
   const [totalUnreadThreads, setTotalUnreadThreads] = useState(0)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [toasts, setToasts] = useState<MailToast[]>([])
+  const [lastReplyEvent, setLastReplyEvent] = useState<{ threadUid: string; replyId: number; at: number } | null>(null)
   const nextToastIdRef = useRef(1)
 
   const dismissToast = useCallback((id: number) => {
@@ -66,6 +68,7 @@ export function MailProvider({ children }: { children: ReactNode }) {
           }
 
           if (event.type === 'mail.reply.created') {
+            setLastReplyEvent({ threadUid: event.threadUid, replyId: event.replyId, at: Date.now() })
             pushToast(`New reply in thread ${event.threadUid.slice(0, 8)}`)
             return
           }
@@ -100,10 +103,11 @@ export function MailProvider({ children }: { children: ReactNode }) {
       totalUnreadThreads,
       streamError,
       toasts,
+      lastReplyEvent,
       dismissToast,
       refreshUnread,
     }),
-    [dismissToast, refreshUnread, streamError, toasts, totalUnreadReplies, totalUnreadThreads]
+    [dismissToast, lastReplyEvent, refreshUnread, streamError, toasts, totalUnreadReplies, totalUnreadThreads]
   )
 
   return <MailCtx.Provider value={value}>{children}</MailCtx.Provider>

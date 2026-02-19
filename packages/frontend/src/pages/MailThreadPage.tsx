@@ -13,6 +13,7 @@ import {
 } from '../lib/api/mail'
 import type { ApiMailContact, ApiMailReply } from '../lib/api/mail'
 import { useMailBreadcrumbs } from '../layout/MailLayout'
+import { useMailCtx } from '../ctx/MailCtx'
 import styles from './MailThreadPage.module.css'
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -47,6 +48,7 @@ function resolveContactSlug(input: string, contacts: ApiMailContact[]): string |
 export function MailThreadPage() {
   const params = useParams()
   const { setBreadcrumbs } = useMailBreadcrumbs()
+  const mail = useMailCtx()
   const [threadTitle, setThreadTitle] = useState('')
   const [threadUidState, setThreadUidState] = useState<string | null>(null)
   const [replies, setReplies] = useState<ApiMailReply[]>([])
@@ -55,6 +57,7 @@ export function MailThreadPage() {
   const [contactInput, setContactInput] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [iconLoadFailures, setIconLoadFailures] = useState<Record<number, boolean>>({})
+  const [newReplyIds, setNewReplyIds] = useState<Record<number, boolean>>({})
   const autoReadThreadUidRef = useRef<string | null>(null)
 
   const threadUid = params.threadId ?? null
@@ -81,6 +84,7 @@ export function MailThreadPage() {
       setThreadUidState(null)
       setThreadTitle('')
       setReplies([])
+      setNewReplyIds({})
       autoReadThreadUidRef.current = null
       return
     }
@@ -130,6 +134,32 @@ export function MailThreadPage() {
       })
   }, [effectiveThreadUid, replies])
 
+  useEffect(() => {
+    const event = mail.lastReplyEvent
+    if (!event || !effectiveThreadUid) return
+    if (event.threadUid !== effectiveThreadUid) return
+
+    void getThread(effectiveThreadUid)
+      .then((payload) => {
+        setThreadTitle(payload.thread.title)
+        setReplies(payload.replies)
+        if (payload.replies.some((reply) => reply.id === event.replyId)) {
+          setNewReplyIds((current) => ({ ...current, [event.replyId]: true }))
+          window.setTimeout(() => {
+            setNewReplyIds((current) => {
+              if (!current[event.replyId]) return current
+              const next = { ...current }
+              delete next[event.replyId]
+              return next
+            })
+          }, 10000)
+        }
+      })
+      .catch(() => {
+        // keep current thread view if refresh fails
+      })
+  }, [effectiveThreadUid, mail.lastReplyEvent])
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -149,7 +179,7 @@ export function MailThreadPage() {
           {replies.map((reply) => (
             <li
               key={reply.id}
-              className={`${styles.messageItem} ${reply.role === 'assistant' ? styles.messageItemAssistant : styles.messageItemUser}`}
+              className={`${styles.messageItem} ${reply.role === 'assistant' ? styles.messageItemAssistant : styles.messageItemUser} ${newReplyIds[reply.id] ? styles.messageItemNew : ''}`}
             >
               <div className={styles.messageHeader}>
                 <div className={styles.sender}>
@@ -199,6 +229,7 @@ export function MailThreadPage() {
                   </div>
                 </div>
                 <div className={styles.headerRight}>
+                  {newReplyIds[reply.id] ? <span className={`${styles.badge} ${styles.newBadge}`}>New</span> : null}
                   {reply.unread ? <span className={`${styles.badge} ${styles.unread}`}>Unread</span> : null}
                   <span className={styles.time}>{new Date(reply.createdAt).toLocaleString()}</span>
                 </div>

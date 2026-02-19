@@ -71,6 +71,12 @@
   border-color: #dde3ec;
 }
 
+.messageItemNew {
+  border-color: #8db2ff;
+  box-shadow: inset 0 0 0 1px rgba(65, 114, 224, 0.22);
+  background: linear-gradient(180deg, #f3f8ff 0%, #ffffff 36%);
+}
+
 .messageItemUser .senderAvatar {
   background: #edf1f6;
   border-color: #ced6e2;
@@ -166,6 +172,13 @@
   border-color: #9db0db;
   background: #edf3ff;
   color: #173a9a;
+  font-weight: 700;
+}
+
+.newBadge {
+  border-color: #81a7ff;
+  background: #dfeaff;
+  color: #1548bb;
   font-weight: 700;
 }
 

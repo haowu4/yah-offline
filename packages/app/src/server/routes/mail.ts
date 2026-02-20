@@ -3,7 +3,8 @@ import fs from "node:fs"
 import path from "node:path"
 import multer from "multer"
 import { AppCtx } from "../../appCtx.js"
-import { MailEventHub } from "../mailWorker.js"
+import { EventDispatcher } from "../llm/eventDispatcher.js"
+import { logDebugJson, logLine } from "../../logging/index.js"
 
 function parsePositiveInt(value: string): number | null {
   const parsed = Number.parseInt(value, 10)
@@ -79,9 +80,10 @@ function parseBooleanFlag(value: unknown): boolean {
   return value === "1" || value.toLowerCase() === "true"
 }
 
-export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
+export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) {
   const router = Router()
   const mailDB = ctx.dbClients.mail()
+  const llmDB = ctx.dbClients.llm()
   const configDB = ctx.dbClients.config()
   const iconUpload = multer({
     storage: multer.memoryStorage(),
@@ -105,13 +107,24 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
     res.setHeader("Cache-Control", "no-cache, no-transform")
     res.setHeader("Connection", "keep-alive")
     res.flushHeaders()
+    const requestId = typeof res.locals.requestId === "string" ? res.locals.requestId : "-"
+    const streamPath = req.originalUrl || req.url || req.path
+    logLine("info", `SSE IN  ${streamPath} rid=${requestId}`)
+    logDebugJson(ctx.config.app.debug, {
+      event: "http.sse.in",
+      requestId,
+      path: streamPath,
+    })
 
     const lastEventIdRaw = req.header("Last-Event-ID") || req.query.lastEventId
     const lastEventId =
       typeof lastEventIdRaw === "string" ? Number.parseInt(lastEventIdRaw, 10) : 0
 
     const replayEvents = Number.isInteger(lastEventId) && lastEventId > 0
-      ? eventHub.replayAfter(lastEventId)
+      ? eventDispatcher.replayAfter({
+          topic: "mail",
+          lastEventId,
+        })
       : []
 
     for (const item of replayEvents) {
@@ -120,10 +133,13 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
       res.write(`data: ${JSON.stringify(item.event)}\n\n`)
     }
 
-    const unsubscribe = eventHub.subscribe(({ id, event }) => {
-      res.write(`id: ${id}\n`)
-      res.write(`event: ${event.type}\n`)
-      res.write(`data: ${JSON.stringify(event)}\n\n`)
+    const unsubscribe = eventDispatcher.subscribe({
+      topic: "mail",
+      send: ({ id, event }) => {
+        res.write(`id: ${id}\n`)
+        res.write(`event: ${event.type}\n`)
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+      },
     })
 
     const heartbeat = setInterval(() => {
@@ -133,6 +149,12 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
     req.on("close", () => {
       clearInterval(heartbeat)
       unsubscribe()
+      logLine("info", `SSE OUT ${streamPath} rid=${requestId}`)
+      logDebugJson(ctx.config.app.debug, {
+        event: "http.sse.out",
+        requestId,
+        path: streamPath,
+      })
       res.end()
     })
   })
@@ -388,17 +410,26 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
       }
     }
 
-    const job = mailDB.queueJob({
-      threadId: thread.id,
-      userReplyId: userReply.id,
-      requestedContactId: contact?.id ?? null,
-      requestedModel: typeof req.body?.model === "string" ? req.body.model : null,
+    const job = llmDB.enqueueJob({
+      kind: "mail.reply",
+      entityId: thread.threadUid,
+      priority: 50,
+      payload: {
+        threadId: thread.id,
+        userReplyId: userReply.id,
+        requestedContactId: contact?.id ?? null,
+        requestedModel: typeof req.body?.model === "string" ? req.body.model : null,
+      },
     })
 
-    eventHub.emit({
-      type: "mail.thread.updated",
-      threadUid: thread.threadUid,
-      updatedAt: new Date().toISOString(),
+    eventDispatcher.emit({
+      topic: "mail",
+      entityId: thread.threadUid,
+      event: {
+        type: "mail.thread.updated",
+        threadUid: thread.threadUid,
+        updatedAt: new Date().toISOString(),
+      },
     })
 
     res.json({
@@ -449,17 +480,26 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
       status: "completed",
     })
 
-    const job = mailDB.queueJob({
-      threadId: thread.id,
-      userReplyId: reply.id,
-      requestedContactId: contact?.id ?? null,
-      requestedModel: typeof req.body?.model === "string" ? req.body.model : null,
+    const job = llmDB.enqueueJob({
+      kind: "mail.reply",
+      entityId: thread.threadUid,
+      priority: 50,
+      payload: {
+        threadId: thread.id,
+        userReplyId: reply.id,
+        requestedContactId: contact?.id ?? null,
+        requestedModel: typeof req.body?.model === "string" ? req.body.model : null,
+      },
     })
 
-    eventHub.emit({
-      type: "mail.thread.updated",
-      threadUid: thread.threadUid,
-      updatedAt: new Date().toISOString(),
+    eventDispatcher.emit({
+      topic: "mail",
+      entityId: thread.threadUid,
+      event: {
+        type: "mail.thread.updated",
+        threadUid: thread.threadUid,
+        updatedAt: new Date().toISOString(),
+      },
     })
 
     res.json({ threadUid: thread.threadUid, userReplyId: reply.id, jobId: job.id })
@@ -475,12 +515,16 @@ export function createMailRouter(ctx: AppCtx, eventHub: MailEventHub) {
     const result = mailDB.markThreadRead(thread.id)
     const unreadStats = mailDB.getUnreadStats()
 
-    eventHub.emit({
-      type: "mail.unread.changed",
-      threadUid: thread.threadUid,
-      unreadCount: result.unreadCount,
-      totalUnreadReplies: unreadStats.totalUnreadReplies,
-      totalUnreadThreads: unreadStats.totalUnreadThreads,
+    eventDispatcher.emit({
+      topic: "mail",
+      entityId: thread.threadUid,
+      event: {
+        type: "mail.unread.changed",
+        threadUid: thread.threadUid,
+        unreadCount: result.unreadCount,
+        totalUnreadReplies: unreadStats.totalUnreadReplies,
+        totalUnreadThreads: unreadStats.totalUnreadThreads,
+      },
     })
 
     res.json({

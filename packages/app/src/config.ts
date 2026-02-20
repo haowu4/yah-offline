@@ -5,6 +5,7 @@ export type AppConfig = {
 
     app: {
         storagePath: string // env: YAH_STORAGE_PATH default to getDefaultStroagePath().
+        debug: boolean // env: YAH_DEBUG default=0
     },
 
     db: {
@@ -81,6 +82,7 @@ export async function getAppConfig(): Promise<AppConfig> {
     const host = process.env.YAH_HOST || "127.0.0.1"
     const port = parsePort(process.env.YAH_PORT, 11111)
     const apiKeySource = parseApiKeySource(process.env.YAH_API_KEY_SOURCE)
+    const debug = parseBoolean(process.env.YAH_DEBUG, false)
 
     let apiKey = ""
     if (apiKeySource === "env") {
@@ -96,6 +98,7 @@ export async function getAppConfig(): Promise<AppConfig> {
     return {
         app: {
             storagePath,
+            debug,
         },
         db: {
             dbPath,

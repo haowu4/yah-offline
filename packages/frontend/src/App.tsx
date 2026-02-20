@@ -1,4 +1,5 @@
 import styles from './App.module.css'
+import '@ootc/markdown/style.css';
 
 function App() {
   return (

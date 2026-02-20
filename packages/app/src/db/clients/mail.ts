@@ -5,7 +5,6 @@ import {
   MailAttachmentRecord,
   MailAttachmentSummary,
   MailContactRecord,
-  MailJobRecord,
   MailReplyDetailPayload,
   MailReplyRecord,
   MailThreadDetailPayload,
@@ -1069,129 +1068,6 @@ export class MailDBClient {
     return row.unread_count
   }
 
-  queueJob(args: {
-    threadId: number
-    userReplyId: number
-    requestedContactId?: number | null
-    requestedModel?: string | null
-  }): MailJobRecord {
-    const result = this.db
-      .prepare(
-        `
-          INSERT INTO mail_job (thread_id, user_reply_id, requested_contact_id, requested_model)
-          VALUES (?, ?, ?, ?)
-        `
-      )
-      .run(
-        args.threadId,
-        args.userReplyId,
-        args.requestedContactId ?? null,
-        args.requestedModel?.trim() || null
-      )
-
-    return this.getJobById(result.lastInsertRowid as number)
-  }
-
-  getJobById(jobId: number): MailJobRecord {
-    const row = this.db
-      .prepare(
-        `
-          SELECT id, thread_id, user_reply_id, requested_contact_id, requested_model, status, error_message,
-                 run_after, started_at, finished_at, created_at
-          FROM mail_job
-          WHERE id = ?
-        `
-      )
-      .get(jobId) as
-      | {
-          id: number
-          thread_id: number
-          user_reply_id: number
-          requested_contact_id: number | null
-          requested_model: string | null
-          status: "queued" | "running" | "completed" | "failed"
-          error_message: string | null
-          run_after: string
-          started_at: string | null
-          finished_at: string | null
-          created_at: string
-        }
-      | undefined
-
-    if (!row) throw new Error("Job not found")
-
-    return {
-      id: row.id,
-      threadId: row.thread_id,
-      userReplyId: row.user_reply_id,
-      requestedContactId: row.requested_contact_id,
-      requestedModel: row.requested_model,
-      status: row.status,
-      errorMessage: row.error_message,
-      runAfter: row.run_after,
-      startedAt: row.started_at,
-      finishedAt: row.finished_at,
-      createdAt: row.created_at,
-    }
-  }
-
-  claimNextQueuedJob(): MailJobRecord | null {
-    const tx = this.db.transaction(() => {
-      const row = this.db
-        .prepare(
-          `
-            SELECT id
-            FROM mail_job
-            WHERE status = 'queued' AND run_after <= datetime('now')
-            ORDER BY id ASC
-            LIMIT 1
-          `
-        )
-        .get() as { id: number } | undefined
-
-      if (!row) return null
-
-      const updated = this.db
-        .prepare(
-          `
-            UPDATE mail_job
-            SET status = 'running', started_at = datetime('now')
-            WHERE id = ? AND status = 'queued'
-          `
-        )
-        .run(row.id)
-
-      if (updated.changes === 0) return null
-      return this.getJobById(row.id)
-    })
-
-    return tx()
-  }
-
-  completeJob(jobId: number): void {
-    this.db
-      .prepare(
-        `
-          UPDATE mail_job
-          SET status = 'completed', error_message = NULL, finished_at = datetime('now')
-          WHERE id = ?
-        `
-      )
-      .run(jobId)
-  }
-
-  failJob(jobId: number, message: string): void {
-    this.db
-      .prepare(
-        `
-          UPDATE mail_job
-          SET status = 'failed', error_message = ?, finished_at = datetime('now')
-          WHERE id = ?
-        `
-      )
-      .run(message, jobId)
-  }
-
   getUnreadStats(): { totalUnreadReplies: number; totalUnreadThreads: number } {
     const repliesRow = this.db
       .prepare("SELECT COUNT(1) AS count FROM mail_reply WHERE unread = 1")
@@ -1215,50 +1091,6 @@ export class MailDBClient {
     }
   }
 
-  appendEvent(eventType: string, payloadJson: string): number {
-    const result = this.db
-      .prepare(
-        `
-          INSERT INTO mail_event (event_type, payload_json)
-          VALUES (?, ?)
-        `
-      )
-      .run(eventType, payloadJson)
-
-    return result.lastInsertRowid as number
-  }
-
-  listEventsAfterId(lastId: number): Array<{
-    id: number
-    eventType: string
-    payloadJson: string
-    createdAt: string
-  }> {
-    const rows = this.db
-      .prepare(
-        `
-          SELECT id, event_type, payload_json, created_at
-          FROM mail_event
-          WHERE id > ?
-          ORDER BY id ASC
-          LIMIT 500
-        `
-      )
-      .all(lastId) as Array<{
-      id: number
-      event_type: string
-      payload_json: string
-      created_at: string
-    }>
-
-    return rows.map((row) => ({
-        id: row.id,
-        eventType: row.event_type,
-        payloadJson: row.payload_json,
-        createdAt: row.created_at,
-      }))
-  }
-
   resolveModel(args: {
     requestedModel?: string | null
     contactId?: number | null
@@ -1274,7 +1106,7 @@ export class MailDBClient {
     }
 
     if (args.configDefaultModel?.trim()) return args.configDefaultModel.trim()
-    return "gpt-4.1-mini"
+    return "gpt-5.2-chat-latest"
   }
 
   upsertThreadContactContext(args: {

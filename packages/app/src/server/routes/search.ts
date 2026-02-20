@@ -1,9 +1,8 @@
 import { Router } from "express"
 import { AppCtx } from "../../appCtx.js"
-import { createSearchLLM } from "../../llm/search.js"
 import { SearchStreamEvent } from "../../type/search.js"
-
-const queryGenerationTasks = new Map<number, Promise<void>>()
+import { logDebugJson, logLine } from "../../logging/index.js"
+import { EventDispatcher } from "../llm/eventDispatcher.js"
 
 function parseQueryId(value: string): number | null {
   const parsed = Number.parseInt(value, 10)
@@ -11,70 +10,10 @@ function parseQueryId(value: string): number | null {
   return parsed
 }
 
-async function wait(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-export function createSearchRouter(ctx: AppCtx) {
+export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) {
   const router = Router()
   const searchDB = ctx.dbClients.search()
-  const searchLLM = createSearchLLM(ctx.config.api.apiKey)
-
-  function ensureQueryGeneration(queryId: number, run: () => Promise<void>): Promise<void> {
-    const existingTask = queryGenerationTasks.get(queryId)
-    if (existingTask) return existingTask
-
-    const task = run().finally(() => {
-      const current = queryGenerationTasks.get(queryId)
-      if (current === task) {
-        queryGenerationTasks.delete(queryId)
-      }
-    })
-    queryGenerationTasks.set(queryId, task)
-    return task
-  }
-
-  async function generateMissingContent(args: { queryId: number; queryValue: string }): Promise<void> {
-    const existing = searchDB.getQueryResult(args.queryId)
-    let intentRecords: Array<{ id: number; intent: string }>
-
-    if (existing && existing.intents.length > 0) {
-      intentRecords = existing.intents.map((intent) => ({
-        id: intent.id,
-        intent: intent.intent,
-      }))
-    } else {
-      const intentResult = await searchLLM.getIntent(args.queryValue)
-      const intents = intentResult.intents.length > 0
-        ? intentResult.intents
-        : [{ value: args.queryValue }]
-      intentRecords = intents.map((intentCandidate) =>
-        searchDB.upsertIntent(args.queryId, intentCandidate.value)
-      )
-    }
-
-    for (const intentRecord of intentRecords) {
-      const latest = searchDB.getQueryResult(args.queryId)
-      const latestIntent = latest?.intents.find((intent) => intent.id === intentRecord.id)
-      const existingArticle = latestIntent?.articles[0]
-      if (existingArticle) {
-        continue
-      }
-
-      const articleResult = await searchLLM.createArticle({
-        query: args.queryValue,
-        intent: intentRecord.intent,
-      })
-      const generatedArticle = articleResult.article
-
-      searchDB.createArticle({
-        intentId: intentRecord.id,
-        title: generatedArticle.title,
-        slug: generatedArticle.slug,
-        content: generatedArticle.content,
-      })
-    }
-  }
+  const llmDB = ctx.dbClients.llm()
 
   router.post("/query", (req, res) => {
     const queryValue = typeof req.body?.query === "string" ? req.body.query.trim() : ""
@@ -89,8 +28,7 @@ export function createSearchRouter(ctx: AppCtx) {
     })
   })
 
-
-  router.get("/query/:query_id/stream", async (req, res) => {
+  router.get("/query/:query_id/stream", (req, res) => {
     const queryId = parseQueryId(req.params.query_id)
     if (!queryId) {
       res.status(400).json({ error: "Invalid query_id" })
@@ -109,95 +47,115 @@ export function createSearchRouter(ctx: AppCtx) {
     res.flushHeaders()
 
     let isClosed = false
-    req.on("close", () => {
-      isClosed = true
+    const requestId = typeof res.locals.requestId === "string" ? res.locals.requestId : "-"
+    const streamPath = req.originalUrl || req.url || req.path
+    logLine("info", `SSE IN  ${streamPath} query_id=${queryId} rid=${requestId}`)
+    logDebugJson(ctx.config.app.debug, {
+      event: "http.sse.in",
+      requestId,
+      path: streamPath,
+      queryId,
     })
 
-    const sendEvent = (event: SearchStreamEvent) => {
+    const finish = () => {
       if (isClosed) return
+      isClosed = true
+      logLine("info", `SSE OUT ${streamPath} query_id=${queryId} rid=${requestId}`)
+      logDebugJson(ctx.config.app.debug, {
+        event: "http.sse.out",
+        requestId,
+        path: streamPath,
+        queryId,
+      })
+      res.end()
+    }
+
+    req.on("close", finish)
+
+    const sendEvent = (id: number, event: SearchStreamEvent) => {
+      if (isClosed) return
+      res.write(`id: ${id}\n`)
       res.write(`event: ${event.type}\n`)
       res.write(`data: ${JSON.stringify(event)}\n\n`)
     }
 
-    const finish = () => {
-      if (isClosed) return
-      res.end()
+    const isTerminalEvent = (event: SearchStreamEvent): boolean =>
+      event.type === "query.completed" || event.type === "query.error"
+
+    const lastEventIdRaw = req.header("Last-Event-ID") || req.query.lastEventId
+    const lastEventId =
+      typeof lastEventIdRaw === "string" ? Number.parseInt(lastEventIdRaw, 10) : 0
+
+    const entityId = `query:${queryId}`
+    const replayEvents = Number.isInteger(lastEventId) && lastEventId >= 0
+      ? eventDispatcher.replayAfter({
+          topic: "search.query",
+          entityId,
+          lastEventId: Math.max(0, lastEventId),
+        })
+      : []
+
+    let replayEnded = false
+    for (const item of replayEvents) {
+      sendEvent(item.id, item.event)
+      if (isTerminalEvent(item.event)) {
+        replayEnded = true
+      }
     }
 
-    try {
-      const existing = searchDB.getQueryResult(queryId)
-      const replayed = Boolean(existing && existing.intents.length > 0)
-      const emittedIntentIds = new Set<number>()
-      const emittedArticleIds = new Set<number>()
-      const emitSnapshot = () => {
-        const snapshot = searchDB.getQueryResult(queryId)
-        if (!snapshot) return
+    if (replayEnded) {
+      finish()
+      return
+    }
 
-        for (const intent of snapshot.intents) {
-          if (!emittedIntentIds.has(intent.id)) {
-            emittedIntentIds.add(intent.id)
-            sendEvent({
-              type: "intent.created",
-              queryId,
-              intent: {
-                id: intent.id,
-                value: intent.intent,
-              },
-            })
-          }
+    const hasGeneratedContent = searchDB.hasGeneratedContent(queryId)
+    const hasActiveJob = llmDB.hasActiveJob("search.generate", entityId)
 
-          for (const article of intent.articles) {
-            if (emittedArticleIds.has(article.id)) continue
-            emittedArticleIds.add(article.id)
-            sendEvent({
-              type: "article.created",
-              queryId,
-              intentId: intent.id,
-              article: {
-                id: article.id,
-                title: article.title,
-                slug: article.slug,
-                snippet: article.snippet,
-              },
-            })
-          }
-        }
-      }
-
-      const generationTask = ensureQueryGeneration(queryId, () =>
-        generateMissingContent({
+    if (!hasGeneratedContent && !hasActiveJob) {
+      llmDB.enqueueJob({
+        kind: "search.generate",
+        entityId,
+        priority: 10,
+        payload: {
           queryId,
           queryValue: query.value,
-        })
-      )
+        },
+      })
+    }
 
-      while (!isClosed) {
-        emitSnapshot()
-        if (!queryGenerationTasks.has(queryId)) {
-          break
-        }
-        await wait(200)
-      }
-
-      if (isClosed) return
-
-      await generationTask
-      emitSnapshot()
-
-      sendEvent({
+    if (hasGeneratedContent && !hasActiveJob && replayEvents.length === 0) {
+      sendEvent(0, {
         type: "query.completed",
         queryId,
-        replayed,
+        replayed: true,
       })
       finish()
-    } catch (error) {
-      sendEvent({
-        type: "query.error",
-        queryId,
-        message: error instanceof Error ? error.message : "Unknown error",
-      })
-      finish()
+      return
     }
+
+    const unsubscribe = eventDispatcher.subscribe({
+      topic: "search.query",
+      entityId,
+      send: ({ id, event }) => {
+        sendEvent(id, event)
+        if (isTerminalEvent(event)) {
+          unsubscribe()
+          clearInterval(heartbeat)
+          finish()
+        }
+      },
+    })
+
+    const heartbeat = setInterval(() => {
+      if (!isClosed) {
+        res.write(": ping\n\n")
+      }
+    }, 15000)
+
+    req.on("close", () => {
+      clearInterval(heartbeat)
+      unsubscribe()
+    })
   })
 
   router.get("/article", (req, res) => {
@@ -232,8 +190,6 @@ export function createSearchRouter(ctx: AppCtx) {
 
     res.json(payload)
   })
-
-
 
   return router
 }

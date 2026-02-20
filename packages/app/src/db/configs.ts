@@ -38,8 +38,13 @@ export const DefaultConfigs: {
     },
     {
         key: "mail.default_model",
-        value: "gpt-4.1-mini",
+        value: "gpt-5.2-chat-latest",
         description: "Fallback LLM model used when request/contact model is not provided.",
+    },
+    {
+        key: "mail.summary_model",
+        value: "gpt-5-mini",
+        description: "LLM model used for mail thread summarization.",
     },
     {
         key: "mail.context.system_prompt",
@@ -55,5 +60,35 @@ export const DefaultConfigs: {
         key: "mail.context.summary_trigger_token_count",
         value: "5000",
         description: "Estimated token threshold to trigger thread summary generation.",
+    },
+    {
+        key: "search.intent_model",
+        value: "gpt-5-mini",
+        description: "LLM model used for search intent extraction.",
+    },
+    {
+        key: "search.article_model",
+        value: "gpt-5.2-chat-latest",
+        description: "LLM model used for search article generation.",
+    },
+    {
+        key: "llm.retry.max_attempts",
+        value: "2",
+        description: "Maximum attempts for LLM generation calls before giving up.",
+    },
+    {
+        key: "llm.retry.timeout_ms",
+        value: "20000",
+        description: "Per-attempt timeout in milliseconds for LLM generation calls.",
+    },
+    {
+        key: "mail.attachments.max_count",
+        value: "3",
+        description: "Maximum number of model-generated attachments allowed per reply.",
+    },
+    {
+        key: "mail.attachments.max_text_chars",
+        value: "20000",
+        description: "Maximum characters allowed for each model-generated text attachment.",
     },
 ]

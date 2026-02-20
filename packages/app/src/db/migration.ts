@@ -129,30 +129,34 @@ export const migrations: Migration[] = [
             UNIQUE (thread_id, contact_id)
         );
 
-        CREATE TABLE IF NOT EXISTS mail_job (
+        CREATE TABLE IF NOT EXISTS llm_job (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            thread_id INTEGER NOT NULL,
-            user_reply_id INTEGER NOT NULL,
-            requested_contact_id INTEGER,
-            requested_model TEXT,
+            kind TEXT NOT NULL CHECK (kind IN ('mail.reply', 'search.generate')),
+            entity_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'completed', 'failed')),
+            priority INTEGER NOT NULL DEFAULT 100,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 3,
             error_message TEXT,
             run_after TEXT NOT NULL DEFAULT (datetime('now')),
             started_at TEXT,
             finished_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (thread_id) REFERENCES mail_thread(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_reply_id) REFERENCES mail_reply(id) ON DELETE CASCADE,
-            FOREIGN KEY (requested_contact_id) REFERENCES mail_contact(id) ON DELETE SET NULL
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_mail_job_status_run_after ON mail_job(status, run_after);
+        CREATE INDEX IF NOT EXISTS idx_llm_job_status_run_after_priority ON llm_job(status, run_after, priority, id);
+        CREATE INDEX IF NOT EXISTS idx_llm_job_entity ON llm_job(kind, entity_id, status);
 
-        CREATE TABLE IF NOT EXISTS mail_event (
+        CREATE TABLE IF NOT EXISTS llm_event (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic TEXT NOT NULL CHECK (topic IN ('mail', 'search.query')),
+            entity_id TEXT NOT NULL,
             event_type TEXT NOT NULL,
             payload_json TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE INDEX IF NOT EXISTS idx_llm_event_topic_entity_id ON llm_event(topic, entity_id, id);
 
         CREATE VIRTUAL TABLE IF NOT EXISTS mail_search_fts USING fts5(
             thread_id UNINDEXED,

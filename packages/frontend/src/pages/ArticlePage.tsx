@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router'
 import type { ApiArticleDetail } from '../lib/api/search'
 import { getArticleBySlug } from '../lib/api/search'
 import styles from './ArticlePage.module.css'
+import '@ootc/markdown/style.css';
 
 type LoadState = {
   isLoading: boolean

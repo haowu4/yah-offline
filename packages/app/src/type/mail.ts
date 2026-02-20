@@ -105,20 +105,6 @@ export type MailAttachmentDetailPayload = {
   }
 }
 
-export type MailJobRecord = {
-  id: number
-  threadId: number
-  userReplyId: number
-  requestedContactId: number | null
-  requestedModel: string | null
-  status: "queued" | "running" | "completed" | "failed"
-  errorMessage: string | null
-  runAfter: string
-  startedAt: string | null
-  finishedAt: string | null
-  createdAt: string
-}
-
 export type MailStreamEvent =
   | {
       type: "mail.job.started"

@@ -102,6 +102,10 @@ export function AppLayout() {
   }
 
   const brandTo = mode === 'mail' ? '/mail' : mode === 'config' ? '/config' : '/search'
+  const mainClassName =
+    mode === 'mail'
+      ? `${styles.main} ${styles.mainMail}`
+      : `${styles.main} ${styles.mainScroll}`
 
   return (
     <div className={styles.appShell}>
@@ -173,7 +177,7 @@ export function AppLayout() {
         </div>
       </header>
 
-      <main className={styles.main}>
+      <main className={mainClassName}>
         <Outlet />
       </main>
     </div>

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { SearchUI } from '../components/SearchUI'
 import { useSearchCtx } from '../ctx/SearchCtx'
@@ -10,6 +10,7 @@ export function SearchPage() {
   const search = useSearchCtx()
 
   const queryFromUrl = params.get('query')?.trim() ?? ''
+  const autoRetryQueryRef = useRef<string>('')
 
   useEffect(() => {
     document.title = queryFromUrl ? `${queryFromUrl} | Search | yah` : 'Search | yah'
@@ -38,9 +39,26 @@ export function SearchPage() {
 
   useEffect(() => {
     if (!queryFromUrl) return
+
+    if (autoRetryQueryRef.current && autoRetryQueryRef.current !== queryFromUrl) {
+      autoRetryQueryRef.current = ''
+    }
+
     if (
       search.query === queryFromUrl &&
-      (search.isLoading || search.queryIntents.length > 0 || Boolean(search.error))
+      !search.isLoading &&
+      search.queryIntents.length === 0 &&
+      Boolean(search.error) &&
+      autoRetryQueryRef.current !== queryFromUrl
+    ) {
+      autoRetryQueryRef.current = queryFromUrl
+      void search.startSearch(queryFromUrl)
+      return
+    }
+
+    if (
+      search.query === queryFromUrl &&
+      (search.isLoading || search.queryIntents.length > 0)
     ) {
       return
     }

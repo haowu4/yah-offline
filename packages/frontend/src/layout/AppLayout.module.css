@@ -265,12 +265,24 @@
 .main {
   flex: 1;
   min-height: 0;
+}
+
+.mainScroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.mainScroll > * {
+  min-height: 100%;
+}
+
+.mainMail {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.main > * {
+.mainMail > * {
   flex: 1;
   min-height: 0;
 }

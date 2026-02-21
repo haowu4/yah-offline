@@ -1,17 +1,9 @@
 import { AppCtx } from "../../../appCtx.js"
-import { createMailLLM } from "../../../llm/mail.js"
+import { createCallId, errorDetails, logDebugJson, logLine } from "../../../logging/index.js"
+import { AbstractMagicApi } from "../../../magic/api.js"
 import { MailReplyJobPayload } from "../../../type/llm.js"
 import { EventDispatcher } from "../eventDispatcher.js"
-
-function parseInteger(input: string | null, defaultValue: number): number {
-  if (!input) return defaultValue
-  const parsed = Number.parseInt(input, 10)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : defaultValue
-}
-
-function parsePositiveIntOrDefault(input: string | null, defaultValue: number): number {
-  return parseInteger(input, defaultValue)
-}
+import { LLMRuntimeConfigCache } from "../runtimeConfigCache.js"
 
 function estimateTokenCount(content: string): number {
   return Math.ceil(content.length / 4)
@@ -27,37 +19,122 @@ function deriveTitleFromReply(content: string): string {
   return `${normalized.slice(0, 61)}...`
 }
 
+function formatLogContext(args: {
+  threadId?: number | null
+  replyId?: number | null
+  contactId?: number | null
+}): string {
+  return `thread_id=${args.threadId ?? "-"} reply_id=${args.replyId ?? "-"} contact_id=${args.contactId ?? "-"}`
+}
+
+async function withTimeout<T>(run: () => Promise<T>, timeoutMs: number): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      settled = true
+      reject(new Error(`LLM request timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    run()
+      .then((result) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(result)
+      })
+      .catch((error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        reject(error)
+      })
+  })
+}
+
 export function createMailReplyHandler(args: {
   appCtx: AppCtx
   eventDispatcher: EventDispatcher
+  runtimeConfigCache: LLMRuntimeConfigCache
+  magicApi: AbstractMagicApi
 }): (payload: MailReplyJobPayload & { jobId: number }) => Promise<void> {
   const mailDB = args.appCtx.dbClients.mail()
-  const configDB = args.appCtx.dbClients.config()
+  const magicApiWithContext = args.magicApi as AbstractMagicApi & {
+    withExecutionContext?: <T>(args: {
+      context: {
+        mailModelOverride?: string
+      }
+      run: () => Promise<T>
+    }) => Promise<T>
+  }
 
-  let llm: ReturnType<typeof createMailLLM> | null = null
+  const callWithRetry = async <T>(callArgs: {
+    trigger: "reply-generation" | "summary-generation" | "image-generation"
+    logContext: {
+      threadId?: number | null
+      replyId?: number | null
+      contactId?: number | null
+    }
+    run: () => Promise<T>
+  }): Promise<T> => {
+    const runtimeConfig = args.runtimeConfigCache.get()
+    let lastError: unknown = null
+
+    for (let attempt = 1; attempt <= runtimeConfig.llmRetryMaxAttempts; attempt += 1) {
+      const callId = createCallId()
+      const startMs = Date.now()
+      try {
+        const result = await withTimeout(callArgs.run, runtimeConfig.llmRequestTimeoutMs)
+        const durationMs = Date.now() - startMs
+        logLine(
+          "info",
+          `LLM mail ${callArgs.trigger} ${formatLogContext(callArgs.logContext)} provider=${args.magicApi.providerName({})} ok ${durationMs}ms attempt=${attempt} cid=${callId}`
+        )
+        logDebugJson(args.appCtx.config.app.debug, {
+          event: "llm.call",
+          provider: args.magicApi.providerName({}),
+          operation: `magic.${callArgs.trigger}`,
+          component: "mail",
+          trigger: callArgs.trigger,
+          ...callArgs.logContext,
+          status: "ok",
+          durationMs,
+          attempt,
+          timeoutMs: runtimeConfig.llmRequestTimeoutMs,
+          callId,
+        })
+        return result
+      } catch (error) {
+        lastError = error
+        const durationMs = Date.now() - startMs
+        const details = errorDetails(error)
+        logLine(
+          "error",
+          `LLM mail ${callArgs.trigger} ${formatLogContext(callArgs.logContext)} provider=${args.magicApi.providerName({})} error ${durationMs}ms attempt=${attempt} cid=${callId} msg="${details.errorMessage}"`
+        )
+        logDebugJson(args.appCtx.config.app.debug, {
+          level: "error",
+          event: "llm.call",
+          provider: args.magicApi.providerName({}),
+          operation: `magic.${callArgs.trigger}`,
+          component: "mail",
+          trigger: callArgs.trigger,
+          ...callArgs.logContext,
+          status: "error",
+          durationMs,
+          attempt,
+          timeoutMs: runtimeConfig.llmRequestTimeoutMs,
+          callId,
+          errorName: details.errorName,
+          errorMessage: details.errorMessage,
+        })
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Mail generation failed")
+  }
 
   return async (payload) => {
-    if (!llm) {
-      llm = createMailLLM(args.appCtx.config.api.apiKey, {
-        retryMaxAttempts: parsePositiveIntOrDefault(
-          configDB.getValue("llm.retry.max_attempts"),
-          2
-        ),
-        requestTimeoutMs: parsePositiveIntOrDefault(
-          configDB.getValue("llm.retry.timeout_ms"),
-          20000
-        ),
-        maxAttachments: parsePositiveIntOrDefault(
-          configDB.getValue("mail.attachments.max_count"),
-          3
-        ),
-        maxTextAttachmentChars: parsePositiveIntOrDefault(
-          configDB.getValue("mail.attachments.max_text_chars"),
-          20000
-        ),
-        debug: args.appCtx.config.app.debug,
-      })
-    }
+    const runtimeConfig = args.runtimeConfigCache.get()
 
     const thread = mailDB.getThreadById(payload.threadId)
     if (!thread) {
@@ -89,21 +166,13 @@ export function createMailReplyHandler(args: {
       ? mailDB.getContactById(payload.requestedContactId)
       : null
 
-    const systemPrompt =
-      configDB.getValue("mail.context.system_prompt") ||
-      "You are a mail assistant. Respond helpfully in markdown."
-    const maxMessages = parseInteger(configDB.getValue("mail.context.max_messages"), 20)
-    const summaryTriggerTokenCount = parseInteger(
-      configDB.getValue("mail.context.summary_trigger_token_count"),
-      5000
-    )
-    const configuredDefaultModel = configDB.getValue("mail.default_model")
-    const configuredSummaryModel = configDB.getValue("mail.summary_model")
+    const maxMessages = runtimeConfig.mailContextMaxMessages
+    const summaryTriggerTokenCount = runtimeConfig.mailContextSummaryTriggerTokenCount
 
     const model = mailDB.resolveModel({
       requestedModel: payload.requestedModel,
       contactId: requestedContact?.id ?? null,
-      configDefaultModel: configuredDefaultModel,
+      configDefaultModel: null,
     })
 
     const fullHistory = threadDetail.replies
@@ -127,21 +196,24 @@ export function createMailReplyHandler(args: {
       estimatedTokens >= summaryTriggerTokenCount &&
       (!currentContext || currentContext.summaryTokenCount < estimatedTokens)
     ) {
-      summary = await llm.summarize({
-        model: configuredSummaryModel?.trim() || "gpt-5-mini",
-        systemPrompt,
-        contactInstruction: requestedContact.instruction,
-        messages: fullHistory.map((item) => ({
-          role: item.role,
-          content: item.content,
-          contactName: item.contact?.name ?? null,
-        })),
+      const summaryResult = await callWithRetry({
+        trigger: "summary-generation",
         logContext: {
           threadId: thread.id,
           replyId: userReply.id,
           contactId: requestedContact.id,
         },
+        run: () =>
+          args.magicApi.summarize({
+            assistantDescription: requestedContact.instruction,
+            messages: fullHistory.map((item) => ({
+              role: item.role,
+              content: item.content,
+              actorName: item.contact?.name ?? null,
+            })),
+          }),
       })
+      summary = summaryResult.summary
 
       mailDB.upsertThreadContactContext({
         threadId: thread.id,
@@ -152,23 +224,88 @@ export function createMailReplyHandler(args: {
       })
     }
 
-    const replyResult = await llm.generateReply({
-      model,
-      systemPrompt,
-      contactInstruction: requestedContact?.instruction ?? "",
-      summary,
-      history: contextWindow.map((item) => ({
-        role: item.role,
-        content: item.content,
-        contactName: item.contact?.name ?? null,
-      })),
-      userInput: userReply.content,
+    const replyResult = await callWithRetry({
+      trigger: "reply-generation",
       logContext: {
         threadId: thread.id,
         replyId: userReply.id,
         contactId: requestedContact?.id ?? null,
       },
+      run: () => {
+        const runCreateReply = () =>
+          args.magicApi.createReply({
+            assistantDescription: requestedContact?.instruction ?? "",
+            summary,
+            history: contextWindow.map((item) => ({
+              role: item.role,
+              content: item.content,
+              actorName: item.contact?.name ?? null,
+            })),
+            userInput: userReply.content,
+            attachmentPolicy: {
+              maxCount: runtimeConfig.mailAttachmentsMaxCount,
+              maxTextChars: runtimeConfig.mailAttachmentsMaxTextChars,
+            },
+          })
+
+        return magicApiWithContext.withExecutionContext
+          ? magicApiWithContext.withExecutionContext({
+              context: { mailModelOverride: model },
+              run: runCreateReply,
+            })
+          : runCreateReply()
+      },
     })
+
+    const preparedAttachments: Array<
+      | {
+          kind: "text"
+          filename: string
+          quality: "low" | "normal" | "high"
+          textContent: string
+        }
+      | {
+          kind: "image"
+          filename: string
+          quality: "low" | "normal" | "high"
+          mimeType: string
+          binaryContent: Buffer
+        }
+    > = []
+
+    for (const attachment of replyResult.attachments) {
+      if (attachment.kind === "text") {
+        preparedAttachments.push({
+          kind: "text",
+          filename: attachment.filename,
+          quality: attachment.quality,
+          textContent: attachment.content,
+        })
+        continue
+      }
+
+      const image = await callWithRetry({
+        trigger: "image-generation",
+        logContext: {
+          threadId: thread.id,
+          replyId: userReply.id,
+          contactId: requestedContact?.id ?? null,
+        },
+        run: () =>
+          args.magicApi.createImage({
+            description: attachment.description,
+            quality: attachment.quality,
+          }),
+      })
+
+      preparedAttachments.push({
+        kind: "image",
+        filename: attachment.filename,
+        quality: attachment.quality,
+        mimeType: image.mimeType,
+        binaryContent: image.binary,
+      })
+    }
 
     const assistantReply = mailDB.createReply({
       threadId: thread.id,
@@ -180,38 +317,28 @@ export function createMailReplyHandler(args: {
       status: "completed",
     })
 
-    for (const attachment of replyResult.attachments) {
+    for (const attachment of preparedAttachments) {
       if (attachment.kind === "text") {
         mailDB.createAttachment({
           replyId: assistantReply.id,
           filename: attachment.filename,
           kind: "text",
           mimeType: "text/plain; charset=utf-8",
-          textContent: attachment.content,
+          textContent: attachment.textContent,
           toolName: "createTextFile",
-          modelQuality: attachment.modelQuality,
+          modelQuality: attachment.quality,
         })
         continue
       }
-
-      const image = await llm.createImage({
-        prompt: attachment.prompt,
-        modelQuality: attachment.modelQuality,
-        logContext: {
-          threadId: thread.id,
-          replyId: userReply.id,
-          contactId: requestedContact?.id ?? null,
-        },
-      })
 
       mailDB.createAttachment({
         replyId: assistantReply.id,
         filename: attachment.filename,
         kind: "image",
-        mimeType: image.mimeType,
-        binaryContent: image.binary,
+        mimeType: attachment.mimeType,
+        binaryContent: attachment.binaryContent,
         toolName: "createImageFile",
-        modelQuality: attachment.modelQuality,
+        modelQuality: attachment.quality,
       })
     }
 

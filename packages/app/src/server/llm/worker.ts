@@ -4,6 +4,8 @@ import { MailReplyJobPayload, SearchGenerateJobPayload } from "../../type/llm.js
 import { EventDispatcher } from "./eventDispatcher.js"
 import { createMailReplyHandler } from "./handlers/mailReply.js"
 import { createSearchGenerateHandler } from "./handlers/searchGenerate.js"
+import { LLMRuntimeConfigCache } from "./runtimeConfigCache.js"
+import { createMagicApi } from "../../magic/factory.js"
 
 function parsePayload<T>(payloadJson: string): T {
   return JSON.parse(payloadJson) as T
@@ -17,8 +19,20 @@ function retryDelaySecondsForAttempt(attempt: number): number {
 
 export function startLLMWorker(appCtx: AppCtx, eventDispatcher: EventDispatcher): () => void {
   const llmDB = appCtx.dbClients.llm()
-  const mailReplyHandler = createMailReplyHandler({ appCtx, eventDispatcher })
-  const searchGenerateHandler = createSearchGenerateHandler({ appCtx, eventDispatcher })
+  const runtimeConfigCache = new LLMRuntimeConfigCache(appCtx, 5000)
+  const magicApi = createMagicApi({ appCtx })
+  const mailReplyHandler = createMailReplyHandler({
+    appCtx,
+    eventDispatcher,
+    runtimeConfigCache,
+    magicApi,
+  })
+  const searchGenerateHandler = createSearchGenerateHandler({
+    appCtx,
+    eventDispatcher,
+    runtimeConfigCache,
+    magicApi,
+  })
 
   let stopped = false
   let isRunning = false

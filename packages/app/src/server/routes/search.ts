@@ -382,6 +382,139 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     }
   })
 
+  router.post("/query/:query_id/rerun-intents", (req, res) => {
+    const queryId = parseQueryId(req.params.query_id)
+    if (!queryId) {
+      res.status(400).json({ error: "Invalid query_id" })
+      return
+    }
+
+    const query = searchDB.getQueryById(queryId)
+    if (!query) {
+      res.status(404).json({ error: "query not found" })
+      return
+    }
+
+    const entityId = `query:${queryId}`
+    if (llmDB.hasActiveJob("search.generate", entityId)) {
+      res.status(409).json({ error: "query generation is already running" })
+      return
+    }
+
+    llmDB.deleteEvents({
+      topic: "search.query",
+      entityId,
+    })
+
+    llmDB.enqueueJob({
+      kind: "search.generate",
+      entityId,
+      priority: 10,
+      payload: {
+        queryId,
+        regenerateIntents: true,
+        regenerateArticles: true,
+      },
+    })
+
+    res.json({
+      queryId,
+      accepted: true,
+      mode: "rerun-intents",
+    })
+  })
+
+  router.post("/query/:query_id/rerun-articles", (req, res) => {
+    const queryId = parseQueryId(req.params.query_id)
+    if (!queryId) {
+      res.status(400).json({ error: "Invalid query_id" })
+      return
+    }
+
+    const query = searchDB.getQueryById(queryId)
+    if (!query) {
+      res.status(404).json({ error: "query not found" })
+      return
+    }
+
+    const entityId = `query:${queryId}`
+    if (llmDB.hasActiveJob("search.generate", entityId)) {
+      res.status(409).json({ error: "query generation is already running" })
+      return
+    }
+
+    llmDB.deleteEvents({
+      topic: "search.query",
+      entityId,
+    })
+
+    llmDB.enqueueJob({
+      kind: "search.generate",
+      entityId,
+      priority: 10,
+      payload: {
+        queryId,
+        regenerateArticles: true,
+      },
+    })
+
+    res.json({
+      queryId,
+      accepted: true,
+      mode: "rerun-articles",
+    })
+  })
+
+  router.post("/query/:query_id/intents/:intent_id/rerun-article", (req, res) => {
+    const queryId = parseQueryId(req.params.query_id)
+    const intentId = parseQueryId(req.params.intent_id)
+    if (!queryId || !intentId) {
+      res.status(400).json({ error: "Invalid query_id or intent_id" })
+      return
+    }
+
+    const query = searchDB.getQueryById(queryId)
+    if (!query) {
+      res.status(404).json({ error: "query not found" })
+      return
+    }
+
+    const intentExists = searchDB.listIntentsByQueryId(queryId).some((intent) => intent.id === intentId)
+    if (!intentExists) {
+      res.status(404).json({ error: "intent not found for query" })
+      return
+    }
+
+    const entityId = `query:${queryId}`
+    if (llmDB.hasActiveJob("search.generate", entityId)) {
+      res.status(409).json({ error: "query generation is already running" })
+      return
+    }
+
+    llmDB.deleteEvents({
+      topic: "search.query",
+      entityId,
+    })
+
+    llmDB.enqueueJob({
+      kind: "search.generate",
+      entityId,
+      priority: 10,
+      payload: {
+        queryId,
+        regenerateArticles: true,
+        targetIntentId: intentId,
+      },
+    })
+
+    res.json({
+      queryId,
+      accepted: true,
+      mode: "rerun-articles",
+      intentId,
+    })
+  })
+
   router.get("/search/suggestions", (req, res) => {
     const requestedLanguage =
       typeof req.query.language === "string"

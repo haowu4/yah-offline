@@ -1,10 +1,8 @@
 .appShell {
-  height: 100vh;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: transparent;
-  overflow: hidden;
 }
 
 .header {
@@ -273,12 +271,7 @@
 }
 
 .mainScroll {
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.mainScroll > * {
-  min-height: 100%;
+  overflow: visible;
 }
 
 @media (max-width: 720px) {

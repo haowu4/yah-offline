@@ -7,7 +7,7 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import { createQuery, streamQuery } from '../lib/api/search'
+import { createQuery, rerunArticleForIntent, rerunIntents, streamQuery } from '../lib/api/search'
 import type { SearchStreamEvent } from '../lib/api/search'
 import styles from './SearchCtx.module.css'
 
@@ -55,6 +55,8 @@ type SearchContextValue = SearchState & {
       articles: Array<{ id: number; title: string; slug: string; snippet: string }>
     }>
   }) => void
+  rerunIntentResolve: () => Promise<void>
+  rerunArticleGenerationForIntent: (intentId: number) => Promise<void>
   reset: () => void
 }
 
@@ -104,7 +106,13 @@ function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchS
         if (intent.id !== event.intentId) return intent
         const exists = intent.articles.some((article) => article.id === event.article.id)
         if (exists) {
-          return { ...intent, isLoading: false }
+          return {
+            ...intent,
+            isLoading: false,
+            articles: intent.articles.map((article) =>
+              article.id === event.article.id ? event.article : article
+            ),
+          }
         }
 
         return {
@@ -160,6 +168,28 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   })
   const teardownRef = useRef<(() => void) | null>(null)
   const requestIdRef = useRef(0)
+
+  const beginStream = useCallback((queryId: number, requestId: number) => {
+    teardownRef.current = streamQuery({
+      queryId,
+      onEvent: (event) => {
+        if (requestIdRef.current !== requestId) return
+        setState((prev) => applyStreamEvent(prev, event))
+      },
+      onError: (error) => {
+        if (requestIdRef.current !== requestId) return
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: error.message,
+          queryIntents: prev.queryIntents.map((intent) => ({
+            ...intent,
+            isLoading: false,
+          })),
+        }))
+      },
+    })
+  }, [])
 
   const reset = useCallback(() => {
     requestIdRef.current += 1
@@ -265,35 +295,66 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       spellCorrectionMode: created.spellCorrectionMode,
     }))
 
-    teardownRef.current = streamQuery({
-      queryId: created.queryId,
-      onEvent: (event) => {
-        if (requestIdRef.current !== requestId) return
-        setState((prev) => applyStreamEvent(prev, event))
-      },
-      onError: (error) => {
-        if (requestIdRef.current !== requestId) return
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: error.message,
-          queryIntents: prev.queryIntents.map((intent) => ({
-            ...intent,
-            isLoading: false,
-          })),
-        }))
-      },
-    })
-  }, [])
+    beginStream(created.queryId, requestId)
+  }, [beginStream])
+
+  const rerunIntentResolve = useCallback(async () => {
+    const queryId = state.queryId
+    if (!queryId) return
+
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    teardownRef.current?.()
+    teardownRef.current = null
+
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+      isReplayed: false,
+      queryIntents: [],
+    }))
+
+    await rerunIntents(queryId)
+    if (requestIdRef.current !== requestId) return
+    beginStream(queryId, requestId)
+  }, [beginStream, state.queryId])
+
+  const rerunArticleGenerationForIntent = useCallback(async (intentId: number) => {
+    const queryId = state.queryId
+    if (!queryId || !Number.isInteger(intentId) || intentId <= 0) return
+
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+    teardownRef.current?.()
+    teardownRef.current = null
+
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+      isReplayed: false,
+      queryIntents: prev.queryIntents.map((intent) => ({
+        ...intent,
+        isLoading: intent.id === intentId,
+      })),
+    }))
+
+    await rerunArticleForIntent(queryId, intentId)
+    if (requestIdRef.current !== requestId) return
+    beginStream(queryId, requestId)
+  }, [beginStream, state.queryId])
 
   const value = useMemo(
     () => ({
       ...state,
       startSearch,
       hydrateFromResult,
+      rerunIntentResolve,
+      rerunArticleGenerationForIntent,
       reset,
     }),
-    [hydrateFromResult, reset, startSearch, state]
+    [hydrateFromResult, rerunArticleGenerationForIntent, rerunIntentResolve, reset, startSearch, state]
   )
 
   return (

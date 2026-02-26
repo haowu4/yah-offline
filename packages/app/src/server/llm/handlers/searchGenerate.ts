@@ -110,14 +110,24 @@ export function createSearchGenerateHandler(args: {
 
     const entityId = `query:${payload.queryId}`
     const existing = searchDB.getQueryResult(payload.queryId)
+    const regenerateIntents = payload.regenerateIntents === true
+    const regenerateArticles = payload.regenerateArticles === true
+    const targetIntentId =
+      Number.isInteger(payload.targetIntentId) && (payload.targetIntentId as number) > 0
+        ? (payload.targetIntentId as number)
+        : null
     let intentRecords: Array<{ id: number; intent: string }>
 
-    if (existing && existing.intents.length > 0) {
+    if (!regenerateIntents && existing && existing.intents.length > 0) {
       intentRecords = existing.intents.map((intent) => ({
         id: intent.id,
         intent: intent.intent,
       }))
     } else {
+      if (regenerateIntents) {
+        searchDB.clearQueryIntentLinks(payload.queryId)
+      }
+
       const intentResult = await callWithRetry({
         trigger: "intent-generation",
         query: query.value,
@@ -152,11 +162,18 @@ export function createSearchGenerateHandler(args: {
       })
     }
 
+    if (targetIntentId !== null) {
+      intentRecords = intentRecords.filter((intentRecord) => intentRecord.id === targetIntentId)
+      if (intentRecords.length === 0) {
+        throw new Error("Target intent not found for query")
+      }
+    }
+
     for (const intentRecord of intentRecords) {
       const latest = searchDB.getQueryResult(payload.queryId)
       const latestIntent = latest?.intents.find((intent) => intent.id === intentRecord.id)
       const existingArticle = latestIntent?.articles[0]
-      if (existingArticle) continue
+      if (existingArticle && !regenerateArticles) continue
 
       const articleResult = await callWithRetry({
         trigger: "article-generation",
@@ -175,6 +192,7 @@ export function createSearchGenerateHandler(args: {
         title: articleResult.article.title,
         slug: articleResult.article.slug,
         content: articleResult.article.content,
+        replaceExistingForIntent: regenerateArticles,
       })
 
       const queryResult = searchDB.getQueryResult(payload.queryId)
@@ -206,7 +224,7 @@ export function createSearchGenerateHandler(args: {
       event: {
         type: "query.completed",
         queryId: payload.queryId,
-        replayed: Boolean(existing && existing.intents.length > 0),
+        replayed: !regenerateIntents && Boolean(existing && existing.intents.length > 0),
       },
     })
   }

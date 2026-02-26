@@ -1,4 +1,6 @@
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { useState } from 'react'
+import { FiCheck, FiCopy, FiMoreHorizontal, FiRefreshCw } from 'react-icons/fi'
 import { Link } from 'react-router'
 import type { FormEvent } from 'react'
 import type { SearchIntent } from '../ctx/SearchCtx'
@@ -20,8 +22,13 @@ type SearchUIProps = {
   examples: string[]
   recent: ApiSearchSuggestionItem[]
   isFirstTimeUser: boolean
+  isRerunningIntents: boolean
+  isRerunningArticles: boolean
+  rerunningIntentId: number | null
   onSearch: (query: string) => Promise<void>
   onSearchOriginal: () => Promise<void>
+  onRerunIntents: () => Promise<void>
+  onRerunArticle: (intentId: number) => Promise<void>
 }
 
 export function SearchUI(props: SearchUIProps) {
@@ -44,6 +51,16 @@ export function SearchUI(props: SearchUIProps) {
     !props.error
   const normalize = (value: string) => value.trim().toLowerCase()
 
+  const [copiedArticleKey, setCopiedArticleKey] = useState<string | null>(null)
+
+  const copyArticleLink = async (path: string, key: string) => {
+    if (typeof window === 'undefined' || !navigator?.clipboard?.writeText) return
+    const url = new URL(path, window.location.origin).toString()
+    await navigator.clipboard.writeText(url)
+    setCopiedArticleKey(key)
+    window.setTimeout(() => setCopiedArticleKey((current) => (current === key ? null : current)), 1500)
+  }
+
   return (
     <div className={styles.container}>
       {props.isLoading && !isHome ? (
@@ -56,7 +73,36 @@ export function SearchUI(props: SearchUIProps) {
           </span>
         </p>
       ) : null}
-      {showResultSummary ? <p className={styles.statusLine}>{t('search.status.showingResults', { query: props.query })}</p> : null}
+      {showResultSummary ? (
+        <div className={styles.statusRow}>
+          <span className={styles.statusRowText}>{t('search.status.showingResults', { query: props.query })}</span>
+          <Menu as="div" className={styles.menuWrap}>
+            <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
+              <FiMoreHorizontal className={styles.menuTriggerIcon} aria-hidden />
+            </MenuButton>
+            <MenuItems className={styles.menuList}>
+              <MenuItem disabled={props.isRerunningIntents || props.isRerunningArticles || props.isLoading}>
+                {({ close, disabled }) => (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    disabled={disabled}
+                    onClick={async () => {
+                      close()
+                      await props.onRerunIntents()
+                    }}
+                  >
+                    <span className={styles.menuItemContent}>
+                      <FiRefreshCw className={styles.menuItemIcon} aria-hidden />
+                      <span>{props.isRerunningIntents ? t('search.action.rerunIntents.running') : t('search.action.rerunIntents')}</span>
+                    </span>
+                  </button>
+                )}
+              </MenuItem>
+            </MenuItems>
+          </Menu>
+        </div>
+      ) : null}
       {showCorrectionHint && props.correctedQuery ? (
         <p className={styles.statusLine}>
           {t('search.status.includingResults', { query: props.correctedQuery })}{' '}
@@ -165,12 +211,74 @@ export function SearchUI(props: SearchUIProps) {
                 <ul className={styles.articleList}>
                   {intent.articles.map((article) => (
                     <li key={article.id} className={styles.articleItem}>
-                      <Link
-                        to={`/content/${article.slug}?query=${encodeURIComponent(props.requestedQuery || props.query)}${props.language && props.language !== 'auto' ? `&lang=${encodeURIComponent(props.language)}` : ''}`}
-                        className={styles.articleLink}
-                      >
-                        {article.title}
-                      </Link>
+                      {(() => {
+                        const articlePath = `/content/${article.slug}?query=${encodeURIComponent(props.requestedQuery || props.query)}${props.language && props.language !== 'auto' ? `&lang=${encodeURIComponent(props.language)}` : ''}`
+                        const menuKey = `${intent.id}-${article.id}`
+                        const isRegenerating = props.rerunningIntentId === intent.id
+
+                        return (
+                          <div className={styles.articleHeader}>
+                            <Link to={articlePath} className={styles.articleLink}>
+                              {article.title}
+                            </Link>
+                            <Menu as="div" className={styles.menuWrap}>
+                              <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
+                                <FiMoreHorizontal className={styles.menuTriggerIcon} aria-hidden />
+                              </MenuButton>
+                              <MenuItems className={styles.menuList}>
+                                <MenuItem disabled={props.isRerunningIntents || props.isRerunningArticles || props.isLoading}>
+                                  {({ close, disabled }) => (
+                                    <button
+                                      type="button"
+                                      className={styles.menuItem}
+                                      disabled={disabled}
+                                      onClick={async () => {
+                                        close()
+                                        await props.onRerunArticle(intent.id)
+                                      }}
+                                    >
+                                      <span className={styles.menuItemContent}>
+                                        <FiRefreshCw className={styles.menuItemIcon} aria-hidden />
+                                        <span>
+                                          {isRegenerating
+                                            ? t('search.action.rerunArticles.running')
+                                            : t('search.action.rerunArticles')}
+                                        </span>
+                                      </span>
+                                    </button>
+                                  )}
+                                </MenuItem>
+                                <div className={styles.menuDivider} role="separator" />
+                                <MenuItem>
+                                  {({ close }) => (
+                                    <button
+                                      type="button"
+                                      className={styles.menuItem}
+                                      onClick={async () => {
+                                        close()
+                                        await copyArticleLink(articlePath, menuKey)
+                                      }}
+                                    >
+                                      <span className={styles.menuItemContent}>
+                                        {copiedArticleKey === menuKey ? (
+                                          <FiCheck className={styles.menuItemIcon} aria-hidden />
+                                        ) : (
+                                          <FiCopy className={styles.menuItemIcon} aria-hidden />
+                                        )}
+                                        <span>
+                                          {copiedArticleKey === menuKey
+                                            ? t('search.action.copyLink.copied')
+                                            : t('search.action.copyLink')}
+                                        </span>
+                                      </span>
+                                    </button>
+                                  )}
+                                </MenuItem>
+                              </MenuItems>
+                            </Menu>
+                          </div>
+                        )
+                      })()}
                       <p className={styles.articleSnippet}>{article.snippet}</p>
                     </li>
                   ))}

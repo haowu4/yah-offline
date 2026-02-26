@@ -133,6 +133,34 @@ export async function createQuery(args: {
   })
 }
 
+export type RerunQueryResponse = {
+  queryId: number
+  accepted: boolean
+  mode: 'rerun-intents' | 'rerun-articles'
+}
+
+export async function rerunIntents(queryId: number): Promise<RerunQueryResponse> {
+  return apiFetch<RerunQueryResponse>(`/query/${queryId}/rerun-intents`, {
+    method: 'POST',
+  })
+}
+
+export async function rerunArticles(queryId: number): Promise<RerunQueryResponse> {
+  return apiFetch<RerunQueryResponse>(`/query/${queryId}/rerun-articles`, {
+    method: 'POST',
+  })
+}
+
+export type RerunIntentArticleResponse = RerunQueryResponse & {
+  intentId: number
+}
+
+export async function rerunArticleForIntent(queryId: number, intentId: number): Promise<RerunIntentArticleResponse> {
+  return apiFetch<RerunIntentArticleResponse>(`/query/${queryId}/intents/${intentId}/rerun-article`, {
+    method: 'POST',
+  })
+}
+
 export async function getQueryResult(queryId: number): Promise<ApiQueryResult> {
   return apiFetch<ApiQueryResult>(`/article?queryId=${queryId}`)
 }

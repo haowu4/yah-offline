@@ -1,9 +1,10 @@
 import { MarkdownPreview } from '@ootc/markdown'
 import { useEffect, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { FiRefreshCw } from 'react-icons/fi'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useI18n } from '../i18n/useI18n'
 import type { ApiArticleDetail } from '../lib/api/search'
-import { getArticleBySlug } from '../lib/api/search'
+import { getArticleBySlug, rerunArticleForIntent, streamQuery } from '../lib/api/search'
 import styles from './ArticlePage.module.css'
 import '@ootc/markdown/style.css';
 
@@ -14,9 +15,11 @@ type LoadState = {
 }
 
 export function ArticlePage() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
+  const navigate = useNavigate()
   const params = useParams()
   const [searchParams] = useSearchParams()
+  const [isRegenerating, setIsRegenerating] = useState(false)
   const [state, setState] = useState<LoadState>({
     isLoading: true,
     error: null,
@@ -74,14 +77,83 @@ export function ArticlePage() {
   const backToResultsHref = query
     ? `/search?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`
     : '/search'
+  const canRegenerate = Boolean(query && state.payload.intent)
+  const createdAtLabel = (() => {
+    const parsed = new Date(article.createdAt)
+    if (Number.isNaN(parsed.getTime())) return article.createdAt
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(parsed)
+  })()
+
+  const regenerateArticle = async () => {
+    if (!query || !state.payload?.intent || isRegenerating) return
+    setIsRegenerating(true)
+
+    try {
+      await rerunArticleForIntent(query.id, state.payload.intent.id)
+
+      let settled = false
+      const unsubscribe = streamQuery({
+        queryId: query.id,
+        onEvent: (event) => {
+          if (settled) return
+          if (event.type === 'article.created' && event.intentId === state.payload?.intent?.id) {
+            settled = true
+            unsubscribe()
+            const nextSlug = event.article.slug
+            const nextHref = `/content/${encodeURIComponent(nextSlug)}?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`
+            navigate(nextHref, { replace: true })
+            setIsRegenerating(false)
+            return
+          }
+
+          if (event.type === 'query.error' || event.type === 'query.completed') {
+            settled = true
+            unsubscribe()
+            setIsRegenerating(false)
+          }
+        },
+        onError: () => {
+          if (settled) return
+          settled = true
+          unsubscribe()
+          setIsRegenerating(false)
+        },
+      })
+    } catch {
+      setIsRegenerating(false)
+    }
+  }
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <div className={styles.backRow}>
-          <Link to={backToResultsHref}>{t('article.back.results')}</Link>
+        <div className={styles.mainHeader}>
+          <div className={styles.headerMeta}>
+            <div className={styles.backRow}>
+              <Link to={backToResultsHref}>{t('article.back.results')}</Link>
+            </div>
+            <p className={styles.createdAt}>
+              {t('article.meta.createdAt', { value: createdAtLabel })}
+            </p>
+          </div>
+          {canRegenerate ? (
+            <button
+              type="button"
+              className={styles.regenerateButton}
+              onClick={() => void regenerateArticle()}
+              disabled={isRegenerating}
+            >
+              <FiRefreshCw className={isRegenerating ? styles.regenerateIconSpinning : styles.regenerateIcon} aria-hidden />
+              <span>{isRegenerating ? t('article.action.regenerating') : t('article.action.regenerate')}</span>
+            </button>
+          ) : null}
         </div>
-        <h1>{article.title}</h1>
         <MarkdownPreview content={article.content} />
       </main>
 

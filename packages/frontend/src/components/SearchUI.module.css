@@ -25,6 +25,113 @@
   text-decoration: underline;
 }
 
+.statusRow {
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.statusRowText {
+  font-size: 13px;
+  color: #555;
+  letter-spacing: 0.1px;
+}
+
+.menuWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.menuTrigger {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #7a838f;
+  border-radius: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  transform: translateY(1px);
+}
+
+.menuTrigger:hover {
+  background: #f5f7fa;
+  border-color: #d8dee8;
+  color: #1f4fbf;
+}
+
+.menuTrigger:focus-visible {
+  outline: 2px solid rgba(31, 77, 255, 0.16);
+  outline-offset: 0;
+}
+
+.menuTriggerIcon {
+  width: 15px;
+  height: 15px;
+}
+
+.menuList {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 168px;
+  border: 1px solid #c7ced9;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+  z-index: 10;
+  padding: 0;
+}
+
+.menuItem {
+  width: 100%;
+  border: 0;
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.menuItemContent {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menuItemIcon {
+  width: 14px;
+  height: 14px;
+  color: #5f6773;
+}
+
+.menuDivider {
+  height: 1px;
+  background: #e7ebf1;
+  margin: 2px 0;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: #f3f7ff;
+}
+
+.menuItem:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .statusDots {
   display: inline-flex;
   width: 1.8em;
@@ -313,10 +420,11 @@
 
 .intentTitle {
   margin: 0 0 10px;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 560;
   letter-spacing: 0;
   text-transform: none;
+  color: #6a7280;
 }
 
 .intentStatus {
@@ -344,13 +452,20 @@
 
 .articleLink {
   display: inline-block;
-  margin-bottom: 6px;
   font-size: 1.32rem;
   line-height: 1.24;
   font-weight: 500;
   letter-spacing: -0.01em;
   color: #1f4fbf;
   text-decoration: none;
+}
+
+.articleHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-bottom: 6px;
 }
 
 .articleLink:hover {

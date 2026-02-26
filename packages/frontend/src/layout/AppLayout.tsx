@@ -71,7 +71,7 @@ export function AppLayout() {
   }
 
   const brandTo = '/search'
-  const mainClassName = `${styles.main} ${styles.mainScroll}`
+  const mainClassName = styles.main
 
   return (
     <div className={styles.appShell}>

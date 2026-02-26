@@ -4,6 +4,9 @@ export type LLMJobKind = "search.generate"
 
 export type SearchGenerateJobPayload = {
   queryId: number
+  regenerateIntents?: boolean
+  regenerateArticles?: boolean
+  targetIntentId?: number
 }
 
 export type LLMJobPayloadByKind = {

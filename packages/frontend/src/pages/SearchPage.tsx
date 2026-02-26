@@ -26,6 +26,8 @@ export function SearchPage() {
   const [examples, setExamples] = useState<string[]>([])
   const [recent, setRecent] = useState<ApiSearchSuggestionItem[]>([])
   const [isFirstTimeUser, setIsFirstTimeUser] = useState(true)
+  const [rerunMode, setRerunMode] = useState<'intents' | 'articles' | null>(null)
+  const [rerunIntentId, setRerunIntentId] = useState<number | null>(null)
 
   useEffect(() => {
     document.title = queryFromUrl ? t('search.page.title.query', { query: queryFromUrl }) : t('search.page.title')
@@ -173,6 +175,26 @@ export function SearchPage() {
     })
   }
 
+  const handleRerunIntents = async () => {
+    setRerunMode('intents')
+    try {
+      await search.rerunIntentResolve()
+    } finally {
+      setRerunMode(null)
+    }
+  }
+
+  const handleRerunArticle = async (intentId: number) => {
+    setRerunMode('articles')
+    setRerunIntentId(intentId)
+    try {
+      await search.rerunArticleGenerationForIntent(intentId)
+    } finally {
+      setRerunMode(null)
+      setRerunIntentId(null)
+    }
+  }
+
   return (
     <div className={styles.page}>
       <SearchUI
@@ -189,8 +211,13 @@ export function SearchPage() {
         examples={examples}
         recent={recent}
         isFirstTimeUser={isFirstTimeUser}
+        isRerunningIntents={rerunMode === 'intents'}
+        isRerunningArticles={rerunMode === 'articles'}
+        rerunningIntentId={rerunIntentId}
         onSearch={handleSearch}
         onSearchOriginal={handleSearchOriginal}
+        onRerunIntents={handleRerunIntents}
+        onRerunArticle={handleRerunArticle}
       />
     </div>
   )

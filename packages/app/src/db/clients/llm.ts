@@ -283,7 +283,7 @@ export class LLMDBClient {
           event_type: string
           payload_json: string
           created_at: string
-        }>)
+          }>)
 
     return rows.map((row) => ({
       id: row.id,
@@ -293,5 +293,21 @@ export class LLMDBClient {
       payloadJson: row.payload_json,
       createdAt: row.created_at,
     }))
+  }
+
+  deleteEvents(args: {
+    topic: LLMEventTopic
+    entityId: string
+  }): number {
+    const result = this.db
+      .prepare(
+        `
+          DELETE FROM llm_event
+          WHERE topic = ? AND entity_id = ?
+        `
+      )
+      .run(args.topic, args.entityId)
+
+    return result.changes
   }
 }

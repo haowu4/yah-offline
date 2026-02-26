@@ -246,29 +246,40 @@ export class SearchDBClient {
         return `${collapsed.slice(0, 357)}...`
     }
 
-    private slugExists(slug: string): boolean {
-        const row = this.db
-            .prepare(
-                `
-                SELECT id
-                FROM article
-                WHERE slug = ?
-                LIMIT 1
-                `
-            )
-            .get(slug) as { id: number } | undefined
+    private slugExists(slug: string, excludeArticleId?: number): boolean {
+        const row = excludeArticleId
+            ? (this.db
+                .prepare(
+                    `
+                    SELECT id
+                    FROM article
+                    WHERE slug = ? AND id != ?
+                    LIMIT 1
+                    `
+                )
+                .get(slug, excludeArticleId) as { id: number } | undefined)
+            : (this.db
+                .prepare(
+                    `
+                    SELECT id
+                    FROM article
+                    WHERE slug = ?
+                    LIMIT 1
+                    `
+                )
+                .get(slug) as { id: number } | undefined)
 
         return Boolean(row)
     }
 
-    private getUniqueSlug(baseSlug: string): string {
+    private getUniqueSlug(baseSlug: string, excludeArticleId?: number): string {
         const normalizedBase = baseSlug.trim() || "untitled"
-        if (!this.slugExists(normalizedBase)) return normalizedBase
+        if (!this.slugExists(normalizedBase, excludeArticleId)) return normalizedBase
 
         let index = 2
         while (true) {
             const candidate = `${normalizedBase}-${index}`
-            if (!this.slugExists(candidate)) return candidate
+            if (!this.slugExists(candidate, excludeArticleId)) return candidate
             index += 1
         }
     }
@@ -278,8 +289,11 @@ export class SearchDBClient {
         title: string
         slug: string
         content: string
+        replaceExistingForIntent?: boolean
     }): ArticleRecord {
         const intentId = args.intentId ?? null
+        const replaceExistingForIntent = Boolean(args.replaceExistingForIntent)
+
         if (intentId !== null) {
             const existing = this.db
                 .prepare(
@@ -294,6 +308,23 @@ export class SearchDBClient {
                 )
                 .get(intentId) as { id: number } | undefined
             if (existing) {
+                if (replaceExistingForIntent) {
+                    const title = args.title.trim()
+                    const content = args.content.trim()
+                    if (!title || !content) {
+                        throw new Error("Article title and content are required")
+                    }
+                    const uniqueSlug = this.getUniqueSlug(args.slug, existing.id)
+                    this.db
+                        .prepare(
+                            `
+                            UPDATE article
+                            SET title = ?, slug = ?, content = ?
+                            WHERE id = ?
+                            `
+                        )
+                        .run(title, uniqueSlug, content, existing.id)
+                }
                 return this.getArticleById(existing.id)
             }
         }
@@ -329,6 +360,19 @@ export class SearchDBClient {
         }
 
         return this.getArticleById(articleId)
+    }
+
+    clearQueryIntentLinks(queryId: number): number {
+        const result = this.db
+            .prepare(
+                `
+                DELETE FROM query_query_intent
+                WHERE query_id = ?
+                `
+            )
+            .run(queryId)
+
+        return result.changes
     }
 
     private getArticleById(id: number): ArticleRecord {

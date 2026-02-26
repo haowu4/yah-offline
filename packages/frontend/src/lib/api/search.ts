@@ -143,10 +143,14 @@ export async function getArticleBySlug(slug: string): Promise<ApiArticleDetail> 
 
 export async function getSearchSuggestions(args?: {
   recentLimit?: number
+  language?: string
 }): Promise<ApiSearchSuggestionsPayload> {
   const params = new URLSearchParams()
   if (args?.recentLimit && Number.isInteger(args.recentLimit) && args.recentLimit > 0) {
     params.set('recentLimit', String(args.recentLimit))
+  }
+  if (args?.language) {
+    params.set('language', args.language)
   }
   const query = params.toString()
   return apiFetch<ApiSearchSuggestionsPayload>(`/search/suggestions${query ? `?${query}` : ''}`)

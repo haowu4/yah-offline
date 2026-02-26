@@ -92,12 +92,12 @@ function parseStringArrayOrFallback(rawValue: string | null, fallback: string[])
 }
 
 const fallbackExampleQueries = [
-  "how to use sqlite fts5 with ranking",
-  "explain retrieval augmented generation step by step",
-  "debugging memory leak in node express app",
-  "best practices for typescript api error handling",
-  "compare vector databases for small self-hosted projects",
-  "how to write effective llm system prompts",
+  "sqlite fts5 bm25",
+  "rag architecture",
+  "node express memory leak",
+  "typescript api error handling",
+  "self hosted vector database",
+  "llm system prompt template",
 ]
 
 function parseExampleQueries(rawValue: string | null): string[] {
@@ -116,6 +116,36 @@ function parseExampleQueries(rawValue: string | null): string[] {
   } catch {
     return fallbackExampleQueries
   }
+}
+
+function getExampleQueryConfigKeys(language: string | null): string[] {
+  if (!language) return ["search.example_queries"]
+
+  const normalized = language.trim().toLowerCase()
+  if (!normalized) return ["search.example_queries"]
+
+  const keys: string[] = [`search.example_queries.${normalized}`]
+  const base = normalized.split("-")[0]
+  if (base && base !== normalized) {
+    keys.push(`search.example_queries.${base}`)
+  }
+
+  if (normalized === "zh-hk") {
+    keys.push("search.example_queries.zh-tw")
+  }
+
+  keys.push("search.example_queries")
+  return [...new Set(keys)]
+}
+
+function resolveExampleQueriesForLanguage(configDB: { getValue: (key: string) => string | null }, language: string | null): string[] {
+  for (const key of getExampleQueryConfigKeys(language)) {
+    const value = configDB.getValue(key)
+    if (!value) continue
+    const parsed = parseExampleQueries(value)
+    if (parsed.length > 0) return parsed
+  }
+  return fallbackExampleQueries
 }
 
 const fallbackRecentBlacklistTerms = ["test", "testing", "asdf", "qwer", "zxcv", "1234"]
@@ -315,10 +345,17 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
   })
 
   router.get("/search/suggestions", (req, res) => {
+    const requestedLanguage =
+      typeof req.query.language === "string"
+        ? normalizeLanguageCode(req.query.language)
+        : null
     const recentLimitRaw = typeof req.query.recentLimit === "string" ? req.query.recentLimit : null
     const recentLimit = parsePositiveIntOrDefault(recentLimitRaw, 8)
-    const recent = searchDB.listRecentQueries(Math.min(recentLimit, 20))
-    const examples = parseExampleQueries(configDB.getValue("search.example_queries"))
+    const recent = searchDB.listRecentQueries({
+      limit: Math.min(recentLimit, 20),
+      language: requestedLanguage,
+    })
+    const examples = resolveExampleQueriesForLanguage(configDB, requestedLanguage)
     const payload: SearchSuggestionsPayload = {
       examples,
       recent,

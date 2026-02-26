@@ -1,22 +1,21 @@
-import { createContext, useCallback, useContext, useMemo } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 
 export type LanguageOption = {
   value: string
-  label: string
 }
 
 const LANGUAGE_OPTIONS: LanguageOption[] = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'en', label: 'English' },
-  { value: 'zh-CN', label: 'Chinese (Simplified)' },
-  { value: 'zh-TW', label: 'Chinese (Traditional)' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'ko', label: 'Korean' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
+  { value: 'auto' },
+  { value: 'en' },
+  { value: 'zh-CN' },
+  { value: 'zh-TW' },
+  { value: 'ja' },
+  { value: 'ko' },
+  { value: 'es' },
+  { value: 'fr' },
+  { value: 'de' },
 ]
 
 type LanguageContextValue = {
@@ -26,19 +25,39 @@ type LanguageContextValue = {
 }
 
 const LanguageCtx = createContext<LanguageContextValue | null>(null)
+const LANGUAGE_STORAGE_KEY = 'yah.language'
+
+function readStoredLanguage(): string {
+  if (typeof window === 'undefined') return 'auto'
+  const value = window.localStorage.getItem(LANGUAGE_STORAGE_KEY)?.trim()
+  return value || 'auto'
+}
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const location = useLocation()
   const navigate = useNavigate()
-
-  const language = useMemo(() => {
+  const [language, setLanguageState] = useState<string>(() => {
     const params = new URLSearchParams(location.search)
-    return params.get('lang')?.trim() || 'auto'
-  }, [location.search])
+    const fromUrl = params.get('lang')?.trim()
+    return fromUrl || readStoredLanguage()
+  })
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const fromUrl = params.get('lang')?.trim()
+    if (!fromUrl || fromUrl === language) return
+    setLanguageState(fromUrl)
+  }, [language, location.search])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language)
+  }, [language])
 
   const setLanguage = useCallback(
     (args: { language: string; replace?: boolean }) => {
       const normalized = args.language.trim() || 'auto'
+      setLanguageState(normalized)
       const params = new URLSearchParams(location.search)
 
       if (normalized === 'auto') {

@@ -538,26 +538,47 @@ export class SearchDBClient {
             .run(queryText, language, args.queryId ?? null)
     }
 
-    listRecentQueries(limit: number): SearchRecentQueryItem[] {
-        const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 8
-        const rows = this.db
-            .prepare(
-                `
-                SELECT
-                    query_text AS value,
-                    language,
-                    MAX(created_at) AS last_searched_at
-                FROM query_history
-                GROUP BY query_text, language
-                ORDER BY last_searched_at DESC
-                LIMIT ?
-                `
-            )
-            .all(safeLimit) as Array<{
-            value: string
-            language: string
-            last_searched_at: string
-        }>
+    listRecentQueries(args: { limit: number; language?: string | null }): SearchRecentQueryItem[] {
+        const { language } = args
+        const safeLimit = Number.isInteger(args.limit) && args.limit > 0 ? args.limit : 8
+        const rows = language
+            ? (this.db
+                .prepare(
+                    `
+                    SELECT
+                        query_text AS value,
+                        language,
+                        MAX(created_at) AS last_searched_at
+                    FROM query_history
+                    WHERE language = ?
+                    GROUP BY query_text, language
+                    ORDER BY last_searched_at DESC
+                    LIMIT ?
+                    `
+                )
+                .all(language, safeLimit) as Array<{
+                value: string
+                language: string
+                last_searched_at: string
+            }>)
+            : (this.db
+                .prepare(
+                    `
+                    SELECT
+                        query_text AS value,
+                        language,
+                        MAX(created_at) AS last_searched_at
+                    FROM query_history
+                    GROUP BY query_text, language
+                    ORDER BY last_searched_at DESC
+                    LIMIT ?
+                    `
+                )
+                .all(safeLimit) as Array<{
+                value: string
+                language: string
+                last_searched_at: string
+            }>)
 
         return rows.map((row) => ({
             value: row.value,

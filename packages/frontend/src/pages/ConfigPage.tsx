@@ -11,6 +11,7 @@ import {
   type ApiConfigItem,
   type ConfigPresetName,
 } from '../lib/api/config'
+import { useI18n } from '../i18n/useI18n'
 import styles from './ConfigPage.module.css'
 
 function normalizeKey(value: string): string {
@@ -18,6 +19,7 @@ function normalizeKey(value: string): string {
 }
 
 export function ConfigPage() {
+  const { t } = useI18n()
   const [configs, setConfigs] = useState<ApiConfigItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -41,8 +43,8 @@ export function ConfigPage() {
   const [pendingPresetPreview, setPendingPresetPreview] = useState<ApiConfigPresetChange[]>([])
 
   useEffect(() => {
-    document.title = 'Config | yah'
-  }, [])
+    document.title = t('config.page.title')
+  }, [t])
 
   const fetchConfigs = async () => {
     setIsLoading(true)
@@ -51,7 +53,7 @@ export function ConfigPage() {
       setConfigs(payload.configs)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load configs')
+      setError(err instanceof Error ? err.message : t('config.error.load'))
     } finally {
       setIsLoading(false)
     }
@@ -81,7 +83,7 @@ export function ConfigPage() {
     event.preventDefault()
     const key = normalizeKey(newKey)
     if (!key) {
-      setError('Key is required')
+      setError(t('config.error.keyRequired'))
       return
     }
 
@@ -95,9 +97,9 @@ export function ConfigPage() {
       setNewKey('')
       setNewValue('')
       setError(null)
-      setNotice(`Created "${payload.config.key}"`)
+      setNotice(t('config.notice.created', { key: payload.config.key }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create config')
+      setError(err instanceof Error ? err.message : t('config.error.create'))
     } finally {
       setIsCreating(false)
     }
@@ -123,10 +125,10 @@ export function ConfigPage() {
         current.map((item) => (item.key === key ? payload.config : item))
       )
       setError(null)
-      setNotice(`Saved "${payload.config.key}"`)
+      setNotice(t('config.notice.saved', { key: payload.config.key }))
       cancelEditing()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update config')
+      setError(err instanceof Error ? err.message : t('config.error.update'))
     } finally {
       setIsSaving(false)
     }
@@ -141,9 +143,9 @@ export function ConfigPage() {
         cancelEditing()
       }
       setError(null)
-      setNotice(`Deleted "${key}"`)
+      setNotice(t('config.notice.deleted', { key }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete config')
+      setError(err instanceof Error ? err.message : t('config.error.delete'))
     }
   }
 
@@ -160,10 +162,10 @@ export function ConfigPage() {
       await applyConfigPreset(preset)
       await fetchConfigs()
       setError(null)
-      setNotice(`Applied preset "${preset}"`)
+      setNotice(t('config.notice.applied', { preset }))
       setPendingPreset(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to apply preset')
+      setError(err instanceof Error ? err.message : t('config.error.apply'))
     } finally {
       setIsApplyingPreset(null)
     }
@@ -181,7 +183,7 @@ export function ConfigPage() {
       setPendingPresetPreview(payload.changes)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load preset preview')
+      setError(err instanceof Error ? err.message : t('config.error.preview'))
     } finally {
       setIsLoadingPresetPreview(false)
     }
@@ -190,15 +192,15 @@ export function ConfigPage() {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Config</h1>
+        <h1 className={styles.title}>{t('config.title')}</h1>
       </div>
       {error ? <p className={styles.error}>{error}</p> : null}
       {notice ? <p className={styles.notice}>{notice}</p> : null}
-      {isLoading ? <p className={styles.status}>Loading configs...</p> : null}
+      {isLoading ? <p className={styles.status}>{t('config.loading')}</p> : null}
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>LLM Presets</h2>
+          <h2 className={styles.sectionTitle}>{t('config.presets.title')}</h2>
         </div>
         <div className={styles.presetRow}>
           <button
@@ -234,10 +236,10 @@ export function ConfigPage() {
             Moonshot
           </button>
         </div>
-        {isLoadingPresetPreview ? <p className={styles.status}>Loading preset preview...</p> : null}
+        {isLoadingPresetPreview ? <p className={styles.status}>{t('config.presets.loading')}</p> : null}
         {pendingPreset ? (
           <div className={styles.presetConfirm}>
-            <p className={styles.presetConfirmTitle}>Confirm preset: {pendingPreset}</p>
+            <p className={styles.presetConfirmTitle}>{t('config.presets.confirm', { preset: pendingPreset })}</p>
             {pendingPresetChanges.length > 0 ? (
               <div className={styles.presetChangeList}>
                 {pendingPresetChanges.map((item) => (
@@ -252,7 +254,7 @@ export function ConfigPage() {
                 ))}
               </div>
             ) : (
-              <p className={styles.status}>No changes needed for this preset.</p>
+              <p className={styles.status}>{t('config.presets.noChange')}</p>
             )}
             <div className={styles.presetActions}>
               <button
@@ -261,7 +263,7 @@ export function ConfigPage() {
                 disabled={isApplyingPreset !== null}
                 onClick={() => void handleApplyPreset(pendingPreset)}
               >
-                {isApplyingPreset === pendingPreset ? 'Saving...' : 'Save preset'}
+                {isApplyingPreset === pendingPreset ? t('config.presets.saving') : t('config.presets.save')}
               </button>
               <button
                 type="button"
@@ -272,7 +274,7 @@ export function ConfigPage() {
                   setPendingPresetPreview([])
                 }}
               >
-                Cancel
+                {t('config.cancel')}
               </button>
             </div>
           </div>
@@ -281,48 +283,48 @@ export function ConfigPage() {
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>New Config</h2>
+          <h2 className={styles.sectionTitle}>{t('config.new.title')}</h2>
         </div>
         <form onSubmit={handleCreate} className={styles.createForm}>
           <label className={styles.field}>
-            <span className={styles.label}>Key</span>
+            <span className={styles.label}>{t('config.key')}</span>
             <input
               value={newKey}
               onChange={(event) => setNewKey(event.target.value)}
-              placeholder="search.content_generation.model"
+              placeholder={t('config.new.keyPlaceholder')}
               className={styles.input}
             />
           </label>
 
           <label className={styles.field}>
-            <span className={styles.label}>Value</span>
+            <span className={styles.label}>{t('config.value')}</span>
             <input
               value={newValue}
               onChange={(event) => setNewValue(event.target.value)}
-              placeholder="Config value"
+              placeholder={t('config.new.valuePlaceholder')}
               className={styles.input}
             />
           </label>
 
           <button type="submit" className={styles.button} disabled={isCreating}>
-            {isCreating ? 'Creating...' : 'Create config'}
+            {isCreating ? t('config.new.creating') : t('config.new.create')}
           </button>
         </form>
       </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Existing Configs</h2>
+          <h2 className={styles.sectionTitle}>{t('config.existing.title')}</h2>
           <div className={styles.controls}>
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search key or description"
+              placeholder={t('config.search.placeholder')}
               className={styles.searchInput}
             />
             {search ? (
               <button type="button" className={styles.buttonSecondary} onClick={() => setSearch('')}>
-                Clear
+                {t('config.search.clear')}
               </button>
             ) : null}
             <select
@@ -330,23 +332,23 @@ export function ConfigPage() {
               onChange={(event) => setSort(event.target.value as 'key-asc' | 'key-desc')}
               className={styles.select}
             >
-              <option value="key-asc">Key A-Z</option>
-              <option value="key-desc">Key Z-A</option>
+              <option value="key-asc">{t('config.sort.az')}</option>
+              <option value="key-desc">{t('config.sort.za')}</option>
             </select>
           </div>
         </div>
 
         {!isLoading && filteredConfigs.length === 0 ? (
-          <p className={styles.status}>{search ? `No configs match "${search}".` : 'No configs yet.'}</p>
+          <p className={styles.status}>{search ? t('config.empty.search', { search }) : t('config.empty.none')}</p>
         ) : null}
 
         {filteredConfigs.length > 0 ? (
           <div className={styles.table}>
             <div className={styles.tableHeader}>
-              <span>Key</span>
-              <span>Description</span>
-              <span>Value</span>
-              <span>Actions</span>
+              <span>{t('config.table.key')}</span>
+              <span>{t('config.table.description')}</span>
+              <span>{t('config.table.value')}</span>
+              <span>{t('config.table.actions')}</span>
             </div>
             {filteredConfigs.map((item) => {
               const isEditing = editingKey === item.key
@@ -359,7 +361,7 @@ export function ConfigPage() {
                 <div key={item.key} className={styles.row}>
                   <div className={styles.cellKey}>{item.key}</div>
                   <div className={styles.cellDescription}>
-                    {item.description || <span className={styles.placeholder}>No description</span>}
+                    {item.description || <span className={styles.placeholder}>{t('config.description.empty')}</span>}
                   </div>
                   <div className={styles.cellValue}>
                     {isEditing ? (
@@ -377,7 +379,7 @@ export function ConfigPage() {
                             className={styles.linkButton}
                             onClick={() => toggleExpanded(item.key)}
                           >
-                            {isExpanded ? 'Collapse' : 'Expand'}
+                            {isExpanded ? t('config.collapse') : t('config.expand')}
                           </button>
                         ) : null}
                       </>
@@ -392,15 +394,15 @@ export function ConfigPage() {
                           disabled={!isDirty || isSaving}
                           onClick={() => void handleSaveEdit(item.key)}
                         >
-                          {isSaving ? 'Saving...' : 'Save'}
+                          {isSaving ? t('config.presets.saving') : t('config.save')}
                         </button>
                         <button type="button" className={styles.buttonSecondary} onClick={cancelEditing}>
-                          Discard
+                          {t('config.discard')}
                         </button>
                       </>
                     ) : (
                       <button type="button" className={styles.buttonSecondary} onClick={() => startEditing(item)}>
-                        Edit
+                        {t('config.edit')}
                       </button>
                     )}
 
@@ -411,14 +413,14 @@ export function ConfigPage() {
                           className={styles.buttonDanger}
                           onClick={() => void handleDelete(item.key)}
                         >
-                          Confirm
+                          {t('config.delete.confirm')}
                         </button>
                         <button
                           type="button"
                           className={styles.buttonSecondary}
                           onClick={() => setPendingDeleteKey(null)}
                         >
-                          Cancel
+                          {t('config.cancel')}
                         </button>
                       </>
                     ) : (
@@ -427,7 +429,7 @@ export function ConfigPage() {
                         className={styles.buttonDangerSoft}
                         onClick={() => setPendingDeleteKey(item.key)}
                       >
-                        Delete
+                        {t('config.delete')}
                       </button>
                     )}
                   </div>

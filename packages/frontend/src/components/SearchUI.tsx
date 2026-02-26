@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import type { FormEvent } from 'react'
 import type { SearchIntent } from '../ctx/SearchCtx'
+import { useI18n } from '../i18n/useI18n'
 import type { ApiSearchSuggestionItem } from '../lib/api/search'
 import styles from './SearchUI.module.css'
 
@@ -24,6 +25,7 @@ type SearchUIProps = {
 }
 
 export function SearchUI(props: SearchUIProps) {
+  const { t } = useI18n()
   const [input, setInput] = useState(props.initialQuery)
 
   const handleSubmit = async (event: FormEvent) => {
@@ -33,7 +35,7 @@ export function SearchUI(props: SearchUIProps) {
 
   const hasResults = props.queryIntents.length > 0
   const isHome = !props.query && !hasResults
-  const statusMessage = hasResults ? 'Almost there, finalizing results' : 'Understanding your query'
+  const statusMessage = hasResults ? t('search.status.finalizing') : t('search.status.understanding')
   const showResultSummary = !isHome && !props.isLoading && hasResults && !props.error
   const showCorrectionHint =
     !isHome &&
@@ -54,12 +56,12 @@ export function SearchUI(props: SearchUIProps) {
           </span>
         </p>
       ) : null}
-      {showResultSummary ? <p className={styles.statusLine}>Showing results for "{props.query}"</p> : null}
+      {showResultSummary ? <p className={styles.statusLine}>{t('search.status.showingResults', { query: props.query })}</p> : null}
       {showCorrectionHint && props.correctedQuery ? (
         <p className={styles.statusLine}>
-          Including results for "{props.correctedQuery}".{' '}
+          {t('search.status.includingResults', { query: props.correctedQuery })}{' '}
           <button type="button" className={styles.inlineButton} onClick={() => void props.onSearchOriginal()}>
-            Search only for "{props.requestedQuery}"
+            {t('search.status.searchOnlyFor', { query: props.requestedQuery })}
           </button>
         </p>
       ) : null}
@@ -75,17 +77,17 @@ export function SearchUI(props: SearchUIProps) {
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Search..."
+              placeholder={t('search.home.placeholder')}
               className={styles.homeInput}
             />
             <button type="submit" className={styles.submit}>
-              Search
+              {t('search.home.submit')}
             </button>
           </form>
           <div className={styles.suggestionsPanel}>
             {props.recent.length > 0 ? (
               <section className={styles.suggestionsSection}>
-                <h2 className={styles.suggestionsTitle}>Recent searches</h2>
+                <h2 className={styles.suggestionsTitle}>{t('search.home.recent')}</h2>
                 <div className={styles.suggestionGrid}>
                   {props.recent.map((item) => (
                     <button
@@ -107,7 +109,7 @@ export function SearchUI(props: SearchUIProps) {
             {props.examples.length > 0 ? (
               <section className={styles.suggestionsSection}>
                 <h2 className={styles.suggestionsTitle}>
-                  {props.isFirstTimeUser ? 'Try these examples' : 'Explore with examples'}
+                  {props.isFirstTimeUser ? t('search.home.examples.first') : t('search.home.examples.returning')}
                 </h2>
                 <div className={styles.suggestionGrid}>
                   {props.examples.map((query) => (
@@ -130,7 +132,7 @@ export function SearchUI(props: SearchUIProps) {
         </div>
       ) : null}
 
-      {props.query && !hasResults && !props.isLoading ? <p>No results yet.</p> : null}
+      {props.query && !hasResults && !props.isLoading ? <p>{t('search.noResultsYet')}</p> : null}
 
       {hasResults ? (
         <div className={styles.grid}>
@@ -142,8 +144,8 @@ export function SearchUI(props: SearchUIProps) {
             return (
               <section key={intent.id} className={styles.intentCard}>
                 {!isDuplicateTitle ? <h2 className={styles.intentTitle}>{intent.intent}</h2> : null}
-                {intent.isLoading ? <p className={styles.intentStatus}>Finalizing this result...</p> : null}
-                {intent.articles.length === 0 && !intent.isLoading ? <p>No answer yet.</p> : null}
+                {intent.isLoading ? <p className={styles.intentStatus}>{t('search.intent.finalizing')}</p> : null}
+                {intent.articles.length === 0 && !intent.isLoading ? <p>{t('search.intent.noAnswer')}</p> : null}
                 <ul className={styles.articleList}>
                   {intent.articles.map((article) => (
                     <li key={article.id} className={styles.articleItem}>

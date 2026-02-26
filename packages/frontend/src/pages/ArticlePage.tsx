@@ -1,6 +1,7 @@
 import { MarkdownPreview } from '@ootc/markdown'
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
+import { useI18n } from '../i18n/useI18n'
 import type { ApiArticleDetail } from '../lib/api/search'
 import { getArticleBySlug } from '../lib/api/search'
 import styles from './ArticlePage.module.css'
@@ -13,6 +14,7 @@ type LoadState = {
 }
 
 export function ArticlePage() {
+  const { t } = useI18n()
   const params = useParams()
   const [searchParams] = useSearchParams()
   const [state, setState] = useState<LoadState>({
@@ -26,12 +28,12 @@ export function ArticlePage() {
   const languageText = searchParams.get('lang')?.trim() || ''
 
   useEffect(() => {
-    document.title = state.payload?.article.title ? `${state.payload.article.title} | yah` : 'Article | yah'
-  }, [state.payload?.article.title])
+    document.title = state.payload?.article.title ? `${state.payload.article.title} | yah` : t('article.page.title')
+  }, [state.payload?.article.title, t])
 
   useEffect(() => {
     if (!slug) {
-      setState({ isLoading: false, error: 'Missing slug', payload: null })
+      setState({ isLoading: false, error: t('article.error.missingSlug'), payload: null })
       return
     }
 
@@ -47,7 +49,7 @@ export function ArticlePage() {
         if (!isMounted) return
         setState({
           isLoading: false,
-          error: error instanceof Error ? error.message : 'Failed to load article',
+          error: error instanceof Error ? error.message : t('article.error.load'),
           payload: null,
         })
       })
@@ -55,17 +57,15 @@ export function ArticlePage() {
     return () => {
       isMounted = false
     }
-  }, [slug])
+  }, [slug, t])
 
-  if (state.isLoading) {
-    return <div className={styles.loading}>Loading article...</div>
-  }
+  if (state.isLoading) return <div className={styles.loading}>{t('article.loading')}</div>
 
   if (state.error || !state.payload) {
     return (
       <div className={styles.errorWrap}>
-        <p className={styles.errorText}>{state.error ?? 'Article not found'}</p>
-        <Link to="/search">Back to search</Link>
+        <p className={styles.errorText}>{state.error ?? t('article.error.notFound')}</p>
+        <Link to="/search">{t('article.back.search')}</Link>
       </div>
     )
   }
@@ -79,7 +79,7 @@ export function ArticlePage() {
     <div className={styles.page}>
       <main className={styles.main}>
         <div className={styles.backRow}>
-          <Link to={backToResultsHref}>Back to results</Link>
+          <Link to={backToResultsHref}>{t('article.back.results')}</Link>
         </div>
         <h1>{article.title}</h1>
         <MarkdownPreview content={article.content} />
@@ -88,7 +88,7 @@ export function ArticlePage() {
       <aside className={styles.sidebar}>
         {query ? (
           <>
-            <h3>Related query</h3>
+            <h3>{t('article.related.query')}</h3>
             <p>
               <Link to={`/search?query=${encodeURIComponent(query.value)}`}>{query.value}</Link>
             </p>
@@ -97,8 +97,8 @@ export function ArticlePage() {
 
         {query ? (
           <>
-            <h3>Other intents</h3>
-            {relatedIntents.length === 0 ? <p>No related intents.</p> : null}
+            <h3>{t('article.related.intents')}</h3>
+            {relatedIntents.length === 0 ? <p>{t('article.related.none')}</p> : null}
             <ul className={styles.sidebarList}>
               {relatedIntents.map((intent) => (
                 <li key={intent.id}>{intent.intent}</li>

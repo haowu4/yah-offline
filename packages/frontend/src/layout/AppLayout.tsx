@@ -3,12 +3,14 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import type { FormEvent } from 'react'
 import { useLanguageCtx } from '../ctx/LanguageCtx'
 import { LanguagePicker } from '../components/LanguagePicker'
+import { useI18n } from '../i18n/useI18n'
 import styles from './AppLayout.module.css'
 
 export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { language: currentLanguage } = useLanguageCtx()
+  const { t } = useI18n()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -86,11 +88,11 @@ export function AppLayout() {
                 key={`${location.pathname}:${location.search}`}
                 name="query"
                 defaultValue={currentSearchInput}
-                placeholder="Search"
+                placeholder={t('layout.search.placeholder')}
                 className={styles.searchInput}
               />
               <button type="submit" className={styles.searchSubmit}>
-                Search
+                {t('layout.search.submit')}
               </button>
             </form>
           ) : null}
@@ -105,7 +107,7 @@ export function AppLayout() {
               onClick={() => setIsMenuOpen((current) => !current)}
               aria-haspopup="menu"
               aria-expanded={isMenuOpen}
-              aria-label="Open menu"
+              aria-label={t('layout.menu.open')}
               className={`${styles.menuButton} ${isMenuOpen ? styles.menuButtonOpen : ''}`}
             >
               <span className={styles.menuIcon} aria-hidden="true">
@@ -115,8 +117,8 @@ export function AppLayout() {
             </button>
 
             {isMenuOpen ? (
-              <div className={styles.menu} role="menu" aria-label="Main menu">
-                <p className={styles.menuTitle}>Menu</p>
+              <div className={styles.menu} role="menu" aria-label={t('layout.menu.title')}>
+                <p className={styles.menuTitle}>{t('layout.menu.title')}</p>
                 <button
                   type="button"
                   onClick={goToConfig}
@@ -124,7 +126,7 @@ export function AppLayout() {
                   role="menuitem"
                 >
                   <span className={styles.menuItemText}>
-                    <span className={styles.menuItemLabel}>Config</span>
+                    <span className={styles.menuItemLabel}>{t('layout.menu.config')}</span>
                   </span>
                 </button>
                 <button
@@ -135,10 +137,10 @@ export function AppLayout() {
                   aria-disabled="true"
                 >
                   <span className={styles.menuItemText}>
-                    <span className={styles.menuItemLabel}>Guides</span>
+                    <span className={styles.menuItemLabel}>{t('layout.menu.guides')}</span>
                   </span>
                   <span className={styles.menuItemMeta}>
-                    <span className={styles.menuMetaBadge}>Soon</span>
+                    <span className={styles.menuMetaBadge}>{t('layout.menu.soon')}</span>
                   </span>
                 </button>
               </div>

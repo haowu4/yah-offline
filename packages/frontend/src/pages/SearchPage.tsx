@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { SearchUI } from '../components/SearchUI'
 import { useSearchCtx } from '../ctx/SearchCtx'
 import { useLanguageCtx } from '../ctx/LanguageCtx'
+import { useI18n } from '../i18n/useI18n'
 import { getSearchSuggestions, type ApiSearchSuggestionItem } from '../lib/api/search'
 import styles from './SearchPage.module.css'
 
@@ -16,6 +17,7 @@ export function SearchPage() {
   const navigate = useNavigate()
   const search = useSearchCtx()
   const { language } = useLanguageCtx()
+  const { t, locale } = useI18n()
 
   const queryFromUrl = params.get('query')?.trim() ?? ''
   const languageFromUrl = language
@@ -26,14 +28,14 @@ export function SearchPage() {
   const [isFirstTimeUser, setIsFirstTimeUser] = useState(true)
 
   useEffect(() => {
-    document.title = queryFromUrl ? `${queryFromUrl} | Search | yah` : 'Search | yah'
-  }, [queryFromUrl])
+    document.title = queryFromUrl ? t('search.page.title.query', { query: queryFromUrl }) : t('search.page.title')
+  }, [queryFromUrl, t])
 
   useEffect(() => {
     if (queryFromUrl) return
     let cancelled = false
 
-    void getSearchSuggestions({ recentLimit: 8 })
+    void getSearchSuggestions({ recentLimit: 8, language: locale })
       .then((payload) => {
         if (cancelled) return
         setExamples(payload.examples)
@@ -50,7 +52,7 @@ export function SearchPage() {
     return () => {
       cancelled = true
     }
-  }, [queryFromUrl])
+  }, [locale, queryFromUrl])
 
   useEffect(() => {
     if (queryFromUrl) return

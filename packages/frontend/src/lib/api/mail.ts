@@ -52,19 +52,6 @@ export type MailStreamEvent =
       totalUnreadReplies: number
     }
 
-export type ApiMailContact = {
-  id: number
-  slug: string
-  name: string
-  instruction: string
-  icon: string
-  iconLocation: string | null
-  color: string
-  defaultModel: string | null
-  createdAt: string
-  updatedAt: string
-}
-
 export type ApiMailThreadSummary = {
   threadUid: string
   title: string
@@ -73,21 +60,12 @@ export type ApiMailThreadSummary = {
   unreadCount: number
   lastReplyAt: string | null
   lastReplySnippet: string | null
-  contacts: Array<{
-    slug: string
-    name: string
-    color: string
-    icon: string
-    iconLocation: string | null
-    updatedAt: string
-  }>
 }
 
 export type ApiMailReply = {
   id: number
   threadId: number
   role: 'user' | 'assistant' | 'system'
-  contactId: number | null
   model: string | null
   content: string
   unread: boolean
@@ -96,15 +74,6 @@ export type ApiMailReply = {
   errorMessage: string | null
   createdAt: string
   attachmentCount: number
-  contact: {
-    id: number
-    slug: string
-    name: string
-    color: string
-    icon: string
-    iconLocation: string | null
-    updatedAt: string
-  } | null
 }
 
 export type ApiMailAttachmentSummary = {
@@ -122,61 +91,7 @@ export type ApiUnreadStats = {
   totalUnreadReplies: number
 }
 
-export async function listContacts(): Promise<{ contacts: ApiMailContact[] }> {
-  return apiFetch('/mail/contact')
-}
-
-export async function createContact(args: {
-  slug?: string
-  name: string
-  instruction?: string
-  icon?: string
-  color?: string
-  defaultModel?: string
-}): Promise<{ contact: ApiMailContact }> {
-  return apiFetch('/mail/contact', {
-    method: 'POST',
-    body: JSON.stringify(args),
-  })
-}
-
-export async function getContact(slug: string): Promise<{ contact: ApiMailContact }> {
-  return apiFetch(`/mail/contact/${encodeURIComponent(slug)}`)
-}
-
-export async function updateContact(
-  slug: string,
-  args: {
-    slug?: string
-    name?: string
-    instruction?: string
-    icon?: string
-    color?: string
-    defaultModel?: string
-  }
-): Promise<{ contact: ApiMailContact }> {
-  return apiFetch(`/mail/contact/${encodeURIComponent(slug)}`, {
-    method: 'PUT',
-    body: JSON.stringify(args),
-  })
-}
-
-export async function uploadContactIconMultipart(slug: string, file: File | Blob): Promise<{ contact: ApiMailContact }> {
-  const form = new FormData()
-  form.append('icon', file)
-  return apiFetch(`/mail/contact/${encodeURIComponent(slug)}/icon`, {
-    method: 'PUT',
-    body: form,
-  })
-}
-
-export function getContactIconUrl(slug: string, updatedAt?: string): string {
-  const suffix = updatedAt ? `?v=${encodeURIComponent(updatedAt)}` : ''
-  return `${API_BASE}/mail/contact/${encodeURIComponent(slug)}/icon${suffix}`
-}
-
 export async function listThreads(args?: {
-  contact?: string
   from?: string
   to?: string
   keyword?: string
@@ -184,7 +99,6 @@ export async function listThreads(args?: {
   tzOffsetMinutes?: number
 }): Promise<{ threads: ApiMailThreadSummary[]; unread: ApiUnreadStats }> {
   const params = new URLSearchParams()
-  if (args?.contact) params.set('contact', args.contact)
   if (args?.from) params.set('from', args.from)
   if (args?.to) params.set('to', args.to)
   if (args?.keyword) params.set('keyword', args.keyword)
@@ -202,7 +116,6 @@ export async function listThreads(args?: {
 export async function createThread(args: {
   title?: string
   content: string
-  contactSlug?: string
   model?: string
 }): Promise<{ threadUid: string; userReplyId: number; jobId: number }> {
   return apiFetch('/mail/thread', {
@@ -224,17 +137,30 @@ export async function getThread(threadUid: string): Promise<{
   return apiFetch(`/mail/thread/${encodeURIComponent(threadUid)}`)
 }
 
+export async function updateThreadTitle(args: { threadUid: string; title: string }): Promise<{
+  thread: {
+    id: number
+    threadUid: string
+    title: string
+    createdAt: string
+    updatedAt: string
+  } | null
+}> {
+  return apiFetch(`/mail/thread/${encodeURIComponent(args.threadUid)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ title: args.title }),
+  })
+}
+
 export async function createReply(args: {
   threadUid: string
   content: string
-  contactSlug?: string
   model?: string
 }): Promise<{ threadUid: string; userReplyId: number; jobId: number }> {
   return apiFetch(`/mail/thread/${encodeURIComponent(args.threadUid)}/reply`, {
     method: 'POST',
     body: JSON.stringify({
       content: args.content,
-      contactSlug: args.contactSlug,
       model: args.model,
     }),
   })
@@ -304,15 +230,12 @@ export async function listModelCandidates(): Promise<{ models: string[] }> {
   return apiFetch('/mail/config/model-candidates')
 }
 
-export async function getComposerConfig(): Promise<{ defaultContact: string | null }> {
-  return apiFetch('/mail/config/composer')
-}
-
-export function streamMail(args: {
+export function streamMailThread(args: {
+  threadUid: string
   onEvent: (event: MailStreamEvent) => void
   onError: (error: Error) => void
 }): () => void {
-  const source = new EventSource(`${API_BASE}/mail/stream`)
+  const source = new EventSource(`${API_BASE}/mail/thread/${encodeURIComponent(args.threadUid)}/stream`)
 
   const handleGeneric = (event: MessageEvent) => {
     const parsed = JSON.parse(event.data) as MailStreamEvent

@@ -6,13 +6,11 @@ export type LLMJobKind = "mail.reply" | "search.generate"
 export type MailReplyJobPayload = {
   threadId: number
   userReplyId: number
-  requestedContactId: number | null
   requestedModel: string | null
 }
 
 export type SearchGenerateJobPayload = {
   queryId: number
-  queryValue: string
 }
 
 export type LLMJobPayloadByKind = {

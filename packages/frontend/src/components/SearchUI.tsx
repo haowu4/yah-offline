@@ -2,16 +2,25 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import type { FormEvent } from 'react'
 import type { SearchIntent } from '../ctx/SearchCtx'
+import type { ApiSearchSuggestionItem } from '../lib/api/search'
 import styles from './SearchUI.module.css'
 
 type SearchUIProps = {
   initialQuery: string
   query: string
+  requestedQuery: string
+  language: string
+  correctionApplied: boolean
+  correctedQuery: string | null
   queryIntents: SearchIntent[]
   isLoading: boolean
   isReplayed: boolean
   error: string | null
+  examples: string[]
+  recent: ApiSearchSuggestionItem[]
+  isFirstTimeUser: boolean
   onSearch: (query: string) => Promise<void>
+  onSearchOriginal: () => Promise<void>
 }
 
 export function SearchUI(props: SearchUIProps) {
@@ -26,6 +35,11 @@ export function SearchUI(props: SearchUIProps) {
   const isHome = !props.query && !hasResults
   const statusMessage = hasResults ? 'Almost there, finalizing results' : 'Understanding your query'
   const showResultSummary = !isHome && !props.isLoading && hasResults && !props.error
+  const showCorrectionHint =
+    !isHome &&
+    props.correctionApplied &&
+    Boolean(props.correctedQuery) &&
+    !props.error
   const normalize = (value: string) => value.trim().toLowerCase()
 
   return (
@@ -41,6 +55,14 @@ export function SearchUI(props: SearchUIProps) {
         </p>
       ) : null}
       {showResultSummary ? <p className={styles.statusLine}>Showing results for "{props.query}"</p> : null}
+      {showCorrectionHint && props.correctedQuery ? (
+        <p className={styles.statusLine}>
+          Including results for "{props.correctedQuery}".{' '}
+          <button type="button" className={styles.inlineButton} onClick={() => void props.onSearchOriginal()}>
+            Search only for "{props.requestedQuery}"
+          </button>
+        </p>
+      ) : null}
       {props.error ? <p className={styles.error}>{props.error}</p> : null}
 
       {isHome ? (
@@ -60,6 +82,51 @@ export function SearchUI(props: SearchUIProps) {
               Search
             </button>
           </form>
+          <div className={styles.suggestionsPanel}>
+            {props.recent.length > 0 ? (
+              <section className={styles.suggestionsSection}>
+                <h2 className={styles.suggestionsTitle}>Recent searches</h2>
+                <div className={styles.suggestionGrid}>
+                  {props.recent.map((item) => (
+                    <button
+                      key={`${item.value}-${item.language}-${item.lastSearchedAt}`}
+                      type="button"
+                      className={styles.suggestionChip}
+                      onClick={() => {
+                        setInput(item.value)
+                        void props.onSearch(item.value)
+                      }}
+                    >
+                      <span>{item.value}</span>
+                      <small className={styles.recentMeta}>{item.language}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {props.examples.length > 0 ? (
+              <section className={styles.suggestionsSection}>
+                <h2 className={styles.suggestionsTitle}>
+                  {props.isFirstTimeUser ? 'Try these examples' : 'Explore with examples'}
+                </h2>
+                <div className={styles.suggestionGrid}>
+                  {props.examples.map((query) => (
+                    <button
+                      key={query}
+                      type="button"
+                      className={styles.suggestionChip}
+                      onClick={() => {
+                        setInput(query)
+                        void props.onSearch(query)
+                      }}
+                    >
+                      {query}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -81,7 +148,7 @@ export function SearchUI(props: SearchUIProps) {
                   {intent.articles.map((article) => (
                     <li key={article.id} className={styles.articleItem}>
                       <Link
-                        to={`/content/${article.slug}?query=${encodeURIComponent(props.query)}`}
+                        to={`/content/${article.slug}?query=${encodeURIComponent(props.requestedQuery || props.query)}${props.language && props.language !== 'auto' ? `&lang=${encodeURIComponent(props.language)}` : ''}`}
                         className={styles.articleLink}
                       >
                         {article.title}

@@ -64,7 +64,7 @@ export function MailLayout() {
             </Link>
             <nav className={styles.navList}>
               <Link
-                className={`${styles.navItem} ${location.pathname.startsWith('/mail/contact') || location.pathname === '/mail/new-contact' ? '' : !location.search.includes('unread=1') ? styles.navItemActive : ''}`}
+                className={`${styles.navItem} ${!location.search.includes('unread=1') ? styles.navItemActive : ''}`}
                 to="/mail"
               >
                 Inbox
@@ -74,19 +74,6 @@ export function MailLayout() {
                 to="/mail?unread=1"
               >
                 Unread ({mail.totalUnreadThreads})
-              </Link>
-              <span className={styles.divider} aria-hidden />
-              <Link className={styles.actionButtonSecondary} to="/mail/new-contact">
-                <span className={styles.actionLabel}>New Contact</span>
-                <span className={styles.actionIconSecondary} aria-hidden>
-                  <FiPlus />
-                </span>
-              </Link>
-              <Link
-                className={`${styles.navItem} ${location.pathname.startsWith('/mail/contact') ? styles.navItemActive : ''}`}
-                to="/mail/contact"
-              >
-                Contacts
               </Link>
             </nav>
           </aside>

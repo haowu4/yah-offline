@@ -110,6 +110,14 @@ function normalizeReplyAttachments(
   return result.slice(0, Math.max(0, policy.maxCount))
 }
 
+function requiredConfigValue(configDB: { getValue: (key: string) => string | null }, key: string): string {
+  const value = configDB.getValue(key)?.trim()
+  if (!value) {
+    throw new Error(`Missing required config value: ${key}`)
+  }
+  return value
+}
+
 export class OpenaiMagicApi extends AbstractMagicApi {
   private appCtx: AppCtx
   private client: OpenAI
@@ -120,11 +128,25 @@ export class OpenaiMagicApi extends AbstractMagicApi {
   constructor(args: { appCtx: AppCtx }) {
     super()
     this.appCtx = args.appCtx
-    const apiKey = this.appCtx.config.api.apiKey
-    if (!apiKey) {
-      throw new Error("Missing API key for OpenAI magic provider. Set YAH_API_KEY.")
+    const configDB = this.appCtx.dbClients.config()
+    const apiKeySource = this.appCtx.config.api.apiKeySource
+    const envName = configDB.getValue("llm.apikey.env_name")?.trim() || "OPENAI_API_KEY"
+    const keychainName = configDB.getValue("llm.apikey.keychain_name")?.trim() || "openai/default"
+
+    let apiKey = ""
+    if (apiKeySource === "env") {
+      apiKey = process.env[envName]?.trim() || ""
+      if (!apiKey) {
+        throw new Error(`Missing API key for OpenAI magic provider. Set environment variable: ${envName}`)
+      }
+    } else {
+      throw new Error(
+        `YAH_API_KEY_SOURCE=keychain is not implemented yet. Configure key name with llm.apikey.keychain_name (current: ${keychainName}).`
+      )
     }
-    this.client = new OpenAI({ apiKey })
+
+    const baseURL = configDB.getValue("llm.baseurl")?.trim() || ""
+    this.client = new OpenAI(baseURL ? { apiKey, baseURL } : { apiKey })
   }
 
   providerName(_args: {}): string {
@@ -145,7 +167,7 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     language?: string
   }): Promise<{ text: string }> {
     const configDB = this.appCtx.dbClients.config()
-    const model = configDB.getValue("search.intent_model") || "gpt-5-mini"
+    const model = requiredConfigValue(configDB, "search.spelling_correction.model")
 
     const response = await this.client.responses.create({
       model,
@@ -174,7 +196,7 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     language?: string
   }): Promise<MagicSearchIntentResult> {
     const configDB = this.appCtx.dbClients.config()
-    const model = configDB.getValue("search.intent_model") || "gpt-5-mini"
+    const model = requiredConfigValue(configDB, "search.intent_resolve.model")
 
     const response = await this.client.responses.create({
       model,
@@ -206,7 +228,7 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     language?: string
   }): Promise<MagicSearchArticleResult> {
     const configDB = this.appCtx.dbClients.config()
-    const model = configDB.getValue("search.article_model") || "gpt-5.2-chat-latest"
+    const model = requiredConfigValue(configDB, "search.content_generation.model")
 
     const response = await this.client.responses.create({
       model,
@@ -248,7 +270,6 @@ export class OpenaiMagicApi extends AbstractMagicApi {
   }
 
   async summarize(args: {
-    assistantDescription?: string
     messages: Array<{
       role: "user" | "assistant" | "system"
       content: string
@@ -276,10 +297,6 @@ export class OpenaiMagicApi extends AbstractMagicApi {
             "Prioritize factual points, user goals, constraints, and unresolved questions.",
         },
         {
-          role: "system",
-          content: `Assistant description:\n${args.assistantDescription || "(none)"}`,
-        },
-        {
           role: "user",
           content: args.messages
             .map((message) => {
@@ -295,7 +312,6 @@ export class OpenaiMagicApi extends AbstractMagicApi {
   }
 
   async createReply(args: {
-    assistantDescription?: string
     summary: string
     history: Array<{
       role: "user" | "assistant" | "system"
@@ -339,30 +355,15 @@ export class OpenaiMagicApi extends AbstractMagicApi {
                 type: "array",
                 items: {
                   type: "object",
-                  oneOf: [
-                    {
-                      type: "object",
-                      additionalProperties: false,
-                      required: ["kind", "filename", "quality", "content"],
-                      properties: {
-                        kind: { type: "string", enum: ["text"] },
-                        filename: { type: "string" },
-                        quality: { type: "string", enum: ["low", "normal", "high"] },
-                        content: { type: "string" },
-                      },
-                    },
-                    {
-                      type: "object",
-                      additionalProperties: false,
-                      required: ["kind", "filename", "quality", "description"],
-                      properties: {
-                        kind: { type: "string", enum: ["image"] },
-                        filename: { type: "string" },
-                        quality: { type: "string", enum: ["low", "normal", "high"] },
-                        description: { type: "string" },
-                      },
-                    },
-                  ],
+                  additionalProperties: false,
+                  required: ["kind", "filename", "quality", "content", "description"],
+                  properties: {
+                    kind: { type: "string", enum: ["text", "image"] },
+                    filename: { type: "string" },
+                    quality: { type: "string", enum: ["low", "normal", "high"] },
+                    content: { type: ["string", "null"] },
+                    description: { type: ["string", "null"] },
+                  },
                 },
               },
             },
@@ -377,10 +378,6 @@ export class OpenaiMagicApi extends AbstractMagicApi {
             "Act like a ChatGPT-style assistant: factual, readable, useful, and concise when appropriate. " +
             "Create attachments only if the user explicitly asks for a file/image artifact. " +
             "Reply content must be markdown.",
-        },
-        {
-          role: "system",
-          content: `Assistant description:\n${args.assistantDescription || "(none)"}`,
         },
         {
           role: "system",

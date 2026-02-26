@@ -1,6 +1,8 @@
 export type ApiQueryRecord = {
   id: number
   value: string
+  language: string
+  originalValue: string | null
   createdAt: string
 }
 
@@ -21,6 +23,18 @@ export type ApiQueryIntent = {
 export type ApiQueryResult = {
   query: ApiQueryRecord
   intents: ApiQueryIntent[]
+}
+
+export type ApiSearchSuggestionItem = {
+  value: string
+  language: string
+  lastSearchedAt: string
+}
+
+export type ApiSearchSuggestionsPayload = {
+  examples: string[]
+  recent: ApiSearchSuggestionItem[]
+  isFirstTimeUser: boolean
 }
 
 export type ApiArticleDetail = {
@@ -94,10 +108,28 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
-export async function createQuery(query: string): Promise<{ queryId: number }> {
-  return apiFetch<{ queryId: number }>('/query', {
+export type CreateQueryResponse = {
+  queryId: number
+  query: string
+  originalQuery: string
+  correctionApplied: boolean
+  correctedQuery: string | null
+  language: string
+  spellCorrectionMode: 'off' | 'auto' | 'force'
+}
+
+export async function createQuery(args: {
+  query: string
+  language: string
+  spellCorrectionMode?: 'off' | 'auto' | 'force'
+}): Promise<CreateQueryResponse> {
+  return apiFetch<CreateQueryResponse>('/query', {
     method: 'POST',
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({
+      query: args.query,
+      language: args.language,
+      spellCorrectionMode: args.spellCorrectionMode,
+    }),
   })
 }
 
@@ -107,6 +139,17 @@ export async function getQueryResult(queryId: number): Promise<ApiQueryResult> {
 
 export async function getArticleBySlug(slug: string): Promise<ApiArticleDetail> {
   return apiFetch<ApiArticleDetail>(`/article/${encodeURIComponent(slug)}`)
+}
+
+export async function getSearchSuggestions(args?: {
+  recentLimit?: number
+}): Promise<ApiSearchSuggestionsPayload> {
+  const params = new URLSearchParams()
+  if (args?.recentLimit && Number.isInteger(args.recentLimit) && args.recentLimit > 0) {
+    params.set('recentLimit', String(args.recentLimit))
+  }
+  const query = params.toString()
+  return apiFetch<ApiSearchSuggestionsPayload>(`/search/suggestions${query ? `?${query}` : ''}`)
 }
 
 export function streamQuery(args: {

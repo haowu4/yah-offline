@@ -96,7 +96,6 @@ This is development-mode content for query: **${args.query}**.
   }
 
   async summarize(args: {
-    assistantDescription?: string
     messages: Array<{
       role: "user" | "assistant" | "system"
       content: string
@@ -115,7 +114,6 @@ This is development-mode content for query: **${args.query}**.
   }
 
   async createReply(args: {
-    assistantDescription?: string
     summary: string
     history: Array<{
       role: "user" | "assistant" | "system"
@@ -160,7 +158,7 @@ This is development-mode content for query: **${args.query}**.
     return {
       content: `### Response
 
-${args.assistantDescription ? `Assistant description: ${args.assistantDescription}` : "Replying with default assistant persona."}
+Replying with default assistant behavior.
 
 You said:
 

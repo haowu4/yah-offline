@@ -1,8 +1,9 @@
 import { Router } from "express"
 import { AppCtx } from "../../appCtx.js"
-import { SearchStreamEvent } from "../../type/search.js"
-import { logDebugJson, logLine } from "../../logging/index.js"
+import { SearchStreamEvent, SearchSuggestionsPayload } from "../../type/search.js"
+import { logDebugJson, logLine, createCallId, ellipsis40, errorDetails } from "../../logging/index.js"
 import { EventDispatcher } from "../llm/eventDispatcher.js"
+import { AbstractMagicApi } from "../../magic/api.js"
 
 function parseQueryId(value: string): number | null {
   const parsed = Number.parseInt(value, 10)
@@ -10,22 +11,320 @@ function parseQueryId(value: string): number | null {
   return parsed
 }
 
-export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) {
+function normalizeLanguageCode(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.toLowerCase() === "auto") return null
+  if (!/^[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*$/.test(trimmed)) return null
+
+  try {
+    const [canonical] = Intl.getCanonicalLocales(trimmed)
+    return canonical || trimmed
+  } catch {
+    return trimmed
+  }
+}
+
+type SpellCorrectionMode = "off" | "auto" | "force"
+
+function parseSpellCorrectionMode(value: unknown, fallback: SpellCorrectionMode): SpellCorrectionMode {
+  if (typeof value !== "string") return fallback
+  if (value === "off" || value === "auto" || value === "force") return value
+  return fallback
+}
+
+function normalizeForDiff(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]/gu, "")
+    .replace(/\s+/g, " ")
+}
+
+function isMeaningfullyDifferent(original: string, corrected: string): boolean {
+  if (!corrected.trim()) return false
+  return normalizeForDiff(original) !== normalizeForDiff(corrected)
+}
+
+async function withTimeout<T>(run: () => Promise<T>, timeoutMs: number): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      settled = true
+      reject(new Error(`LLM request timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    run()
+      .then((result) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(result)
+      })
+      .catch((error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        reject(error)
+      })
+  })
+}
+
+function parsePositiveIntOrDefault(input: string | null, defaultValue: number): number {
+  if (!input) return defaultValue
+  const parsed = Number.parseInt(input, 10)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : defaultValue
+}
+
+function parseStringArrayOrFallback(rawValue: string | null, fallback: string[]): string[] {
+  if (!rawValue) return fallback
+  try {
+    const parsed = JSON.parse(rawValue) as unknown
+    if (!Array.isArray(parsed)) return fallback
+    const values = parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+    return values.length > 0 ? values : fallback
+  } catch {
+    return fallback
+  }
+}
+
+const fallbackExampleQueries = [
+  "how to use sqlite fts5 with ranking",
+  "explain retrieval augmented generation step by step",
+  "debugging memory leak in node express app",
+  "best practices for typescript api error handling",
+  "compare vector databases for small self-hosted projects",
+  "how to write effective llm system prompts",
+]
+
+function parseExampleQueries(rawValue: string | null): string[] {
+  if (!rawValue) return fallbackExampleQueries
+
+  try {
+    const parsed = JSON.parse(rawValue) as unknown
+    if (!Array.isArray(parsed)) return fallbackExampleQueries
+
+    const values = parsed
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    return values.length > 0 ? values : fallbackExampleQueries
+  } catch {
+    return fallbackExampleQueries
+  }
+}
+
+const fallbackRecentBlacklistTerms = ["test", "testing", "asdf", "qwer", "zxcv", "1234"]
+
+function shouldTrackRecentQuery(args: {
+  query: string
+  minChars: number
+  blacklistTerms: string[]
+}): boolean {
+  const normalized = args.query.trim().toLowerCase()
+  if (!normalized) return false
+  if (normalized.length < args.minChars) return false
+  if (args.blacklistTerms.includes(normalized)) return false
+  // filter obvious keyboard-smash style noise like "aaaa" / "1111"
+  if (/^([a-z0-9])\1{2,}$/i.test(normalized)) return false
+  return true
+}
+
+export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher, magicApi: AbstractMagicApi) {
   const router = Router()
   const searchDB = ctx.dbClients.search()
   const llmDB = ctx.dbClients.llm()
+  const configDB = ctx.dbClients.config()
 
-  router.post("/query", (req, res) => {
-    const queryValue = typeof req.body?.query === "string" ? req.body.query.trim() : ""
-    if (!queryValue) {
+  const callMagicWithRetry = async <T>(args: {
+    trigger: "spelling-correction"
+    query: string
+    run: () => Promise<T>
+  }): Promise<T> => {
+    const retryMaxAttempts = parsePositiveIntOrDefault(configDB.getValue("llm.retry.max_attempts"), 2)
+    const timeoutMs = parsePositiveIntOrDefault(configDB.getValue("llm.retry.timeout_ms"), 20000)
+    let lastError: unknown = null
+
+    for (let attempt = 1; attempt <= retryMaxAttempts; attempt += 1) {
+      const callId = createCallId()
+      const startMs = Date.now()
+      try {
+        const result = await withTimeout(args.run, timeoutMs)
+        const durationMs = Date.now() - startMs
+        logLine(
+          "info",
+          `LLM search ${args.trigger} query="${ellipsis40(args.query)}" provider=${magicApi.providerName({})} ok ${durationMs}ms attempt=${attempt} cid=${callId}`
+        )
+        logDebugJson(ctx.config.app.debug, {
+          event: "llm.call",
+          provider: magicApi.providerName({}),
+          operation: `magic.${args.trigger}`,
+          component: "search",
+          trigger: args.trigger,
+          query: args.query.trim(),
+          status: "ok",
+          durationMs,
+          attempt,
+          timeoutMs,
+          callId,
+        })
+        return result
+      } catch (error) {
+        lastError = error
+        const durationMs = Date.now() - startMs
+        const details = errorDetails(error)
+        logLine(
+          "error",
+          `LLM search ${args.trigger} query="${ellipsis40(args.query)}" provider=${magicApi.providerName({})} error ${durationMs}ms attempt=${attempt} cid=${callId} msg="${details.errorMessage}"`
+        )
+        logDebugJson(ctx.config.app.debug, {
+          level: "error",
+          event: "llm.call",
+          provider: magicApi.providerName({}),
+          operation: `magic.${args.trigger}`,
+          component: "search",
+          trigger: args.trigger,
+          query: args.query.trim(),
+          status: "error",
+          durationMs,
+          attempt,
+          timeoutMs,
+          callId,
+          errorName: details.errorName,
+          errorMessage: details.errorMessage,
+        })
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Spell correction failed")
+  }
+
+  router.post("/query", async (req, res) => {
+    const originalQueryValue = typeof req.body?.query === "string" ? req.body.query.trim() : ""
+    if (!originalQueryValue) {
       res.status(400).json({ error: "query is required" })
       return
     }
 
-    const query = searchDB.upsertQuery(queryValue)
-    res.json({
-      queryId: query.id
-    })
+    const language = normalizeLanguageCode(req.body?.language)
+    if (!language) {
+      res.status(400).json({ error: "language is required and must be a valid language code (not 'auto')" })
+      return
+    }
+
+    const spellModeDefault = parseSpellCorrectionMode(
+      configDB.getValue("search.spell_correction_mode"),
+      "auto"
+    )
+    const spellCorrectionMode = parseSpellCorrectionMode(req.body?.spellCorrectionMode, spellModeDefault)
+
+    try {
+      let correctedCandidate = ""
+      if (spellCorrectionMode !== "off") {
+        const cached = searchDB.getSpellCorrection({
+          sourceText: originalQueryValue,
+          language,
+          provider: magicApi.providerName({}),
+        })
+
+        if (cached?.correctedText) {
+          correctedCandidate = cached.correctedText
+        } else {
+          const correction = await callMagicWithRetry({
+            trigger: "spelling-correction",
+            query: originalQueryValue,
+            run: () =>
+              magicApi.correctSpelling({
+                text: originalQueryValue,
+                language,
+              }),
+          })
+
+          correctedCandidate = correction.text.trim()
+          if (correctedCandidate) {
+            searchDB.upsertSpellCorrection({
+              sourceText: originalQueryValue,
+              language,
+              provider: magicApi.providerName({}),
+              correctedText: correctedCandidate,
+            })
+          }
+        }
+      }
+
+      const shouldApplyCorrection =
+        spellCorrectionMode === "force"
+          ? Boolean(correctedCandidate.trim())
+          : spellCorrectionMode === "auto"
+            ? isMeaningfullyDifferent(originalQueryValue, correctedCandidate)
+            : false
+
+      const effectiveQuery = shouldApplyCorrection && correctedCandidate.trim()
+        ? correctedCandidate.trim()
+        : originalQueryValue
+
+      const query = searchDB.upsertQuery({
+        value: effectiveQuery,
+        language,
+        originalValue: originalQueryValue,
+      })
+
+      const recentMinChars = parsePositiveIntOrDefault(configDB.getValue("search.recent.min_query_chars"), 3)
+      const recentDedupeWindowSeconds = parsePositiveIntOrDefault(
+        configDB.getValue("search.recent.dedupe_window_seconds"),
+        300
+      )
+      const recentBlacklistTerms = parseStringArrayOrFallback(
+        configDB.getValue("search.recent.blacklist_terms"),
+        fallbackRecentBlacklistTerms
+      )
+
+      if (
+        shouldTrackRecentQuery({
+          query: effectiveQuery,
+          minChars: recentMinChars,
+          blacklistTerms: recentBlacklistTerms,
+        })
+      ) {
+        searchDB.createQueryHistory({
+          queryText: effectiveQuery,
+          language,
+          queryId: query.id,
+          dedupeWindowSeconds: recentDedupeWindowSeconds,
+        })
+      }
+
+      res.json({
+        queryId: query.id,
+        query: query.value,
+        originalQuery: originalQueryValue,
+        correctionApplied: shouldApplyCorrection,
+        correctedQuery: shouldApplyCorrection ? effectiveQuery : null,
+        language,
+        spellCorrectionMode,
+      })
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to create query",
+      })
+    }
+  })
+
+  router.get("/search/suggestions", (req, res) => {
+    const recentLimitRaw = typeof req.query.recentLimit === "string" ? req.query.recentLimit : null
+    const recentLimit = parsePositiveIntOrDefault(recentLimitRaw, 8)
+    const recent = searchDB.listRecentQueries(Math.min(recentLimit, 20))
+    const examples = parseExampleQueries(configDB.getValue("search.example_queries"))
+    const payload: SearchSuggestionsPayload = {
+      examples,
+      recent,
+      isFirstTimeUser: searchDB.getQueryHistoryCount() === 0,
+    }
+    res.json(payload)
   })
 
   router.get("/query/:query_id/stream", (req, res) => {
@@ -118,7 +417,6 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
         priority: 10,
         payload: {
           queryId,
-          queryValue: query.value,
         },
       })
     }

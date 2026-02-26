@@ -3,9 +3,6 @@ import { AppLayout } from "./layout/AppLayout";
 import { ArticlePage } from "./pages/ArticlePage";
 import { MailPage } from "./pages/MailPage";
 import { SearchPage } from "./pages/SearchPage";
-import { MailContactListPage } from "./pages/MailContactListPage";
-import { MailNewContactPage } from "./pages/MailNewContactPage";
-import { MailContactDetailPage } from "./pages/MailContactDetailPage";
 import { MailThreadPage } from "./pages/MailThreadPage";
 import { MailAttachmentListPage } from "./pages/MailAttachmentListPage";
 import { MailReplyPage } from "./pages/MailReplyPage";
@@ -25,9 +22,6 @@ export function AppRoutes() {
                     <Route path="/content/:slug" element={<ArticlePage />} />
                     <Route path="/mail" element={<MailLayout />}>
                         <Route index element={<MailPage />} />
-                        <Route path="contact" element={<MailContactListPage />} />
-                        <Route path="new-contact" element={<MailNewContactPage />} />
-                        <Route path="contact/:slug" element={<MailContactDetailPage />} />
                         <Route path="thread/new" element={<MailThreadPage />} />
                         <Route path="thread/:threadId" element={<MailThreadPage />} />
                         <Route path="thread/:threadId/attachment" element={<MailAttachmentListPage />} />

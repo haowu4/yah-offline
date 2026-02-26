@@ -120,15 +120,16 @@ export function createSearchGenerateHandler(args: {
     } else {
       const intentResult = await callWithRetry({
         trigger: "intent-generation",
-        query: payload.queryValue,
+        query: query.value,
         run: () =>
           args.magicApi.resolveIntent({
-            query: payload.queryValue,
+            query: query.value,
+            language: query.language,
           }),
       })
       const intents = intentResult.intents.length > 0
         ? intentResult.intents
-        : [payload.queryValue]
+        : [query.value]
 
       intentRecords = intents.map((intentCandidate) => {
         const intent = searchDB.upsertIntent(payload.queryId, intentCandidate)
@@ -159,12 +160,13 @@ export function createSearchGenerateHandler(args: {
 
       const articleResult = await callWithRetry({
         trigger: "article-generation",
-        query: payload.queryValue,
+        query: query.value,
         intent: intentRecord.intent,
         run: () =>
           args.magicApi.createArticle({
-            query: payload.queryValue,
+            query: query.value,
             intent: intentRecord.intent,
+            language: query.language,
           }),
       })
 

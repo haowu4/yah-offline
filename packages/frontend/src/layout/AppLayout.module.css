@@ -106,6 +106,10 @@
   background: #000;
 }
 
+.languageControl {
+  flex-shrink: 0;
+}
+
 .spacer {
   flex-grow: 1;
 }
@@ -304,5 +308,9 @@
   .searchSubmit {
     padding: 0 10px;
     font-size: 12px;
+  }
+
+  .languageControl {
+    margin-left: auto;
   }
 }

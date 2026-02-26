@@ -6,6 +6,7 @@ import {
     QueryIntentWithArticles,
     QueryRecord,
     QueryResultPayload,
+    SearchRecentQueryItem,
 } from "../../type/search.js";
 
 export class SearchDBClient {
@@ -15,32 +16,42 @@ export class SearchDBClient {
         this.db = db;
     }
 
-    upsertQuery(value: string): QueryRecord {
-        const normalizedValue = value.trim()
+    upsertQuery(args: {
+        value: string
+        language: string
+        originalValue?: string | null
+    }): QueryRecord {
+        const normalizedValue = args.value.trim()
         if (!normalizedValue) {
             throw new Error("Query value cannot be empty")
         }
 
+        const language = args.language.trim()
+        if (!language || language.toLowerCase() === "auto") {
+            throw new Error("Query language must be a valid language code")
+        }
+        const originalValue = args.originalValue?.trim() || null
+
         this.db
             .prepare(
                 `
-                INSERT INTO query (value)
-                VALUES (?)
-                ON CONFLICT(value) DO NOTHING
+                INSERT INTO query (value, language, original_value)
+                VALUES (?, ?, ?)
+                ON CONFLICT(value, language) DO NOTHING
                 `
             )
-            .run(normalizedValue)
+            .run(normalizedValue, language, originalValue)
 
         const row = this.db
             .prepare(
                 `
-                SELECT id, value, created_at
+                SELECT id, value, language, original_value, created_at
                 FROM query
-                WHERE value = ?
+                WHERE value = ? AND language = ?
                 `
             )
-            .get(normalizedValue) as
-            | { id: number; value: string; created_at: string }
+            .get(normalizedValue, language) as
+            | { id: number; value: string; language: string; original_value: string | null; created_at: string }
             | undefined
 
         if (!row) {
@@ -50,6 +61,8 @@ export class SearchDBClient {
         return {
             id: row.id,
             value: row.value,
+            language: row.language,
+            originalValue: row.original_value,
             createdAt: row.created_at,
         }
     }
@@ -58,20 +71,87 @@ export class SearchDBClient {
         const row = this.db
             .prepare(
                 `
-                SELECT id, value, created_at
+                SELECT id, value, language, original_value, created_at
                 FROM query
                 WHERE id = ?
                 `
             )
-            .get(id) as { id: number; value: string; created_at: string } | undefined
+            .get(id) as
+            | { id: number; value: string; language: string; original_value: string | null; created_at: string }
+            | undefined
 
         if (!row) return null
 
         return {
             id: row.id,
             value: row.value,
+            language: row.language,
+            originalValue: row.original_value,
             createdAt: row.created_at,
         }
+    }
+
+    getSpellCorrection(args: {
+        sourceText: string
+        language: string
+        provider: string
+    }): { correctedText: string } | null {
+        const sourceText = args.sourceText.trim()
+        if (!sourceText) return null
+
+        const row = this.db
+            .prepare(
+                `
+                SELECT id, corrected_text
+                FROM search_spell_cache
+                WHERE source_text = ? AND language = ? AND provider = ?
+                `
+            )
+            .get(sourceText, args.language, args.provider) as
+            | { id: number; corrected_text: string }
+            | undefined
+
+        if (!row) return null
+
+        this.db
+            .prepare(
+                `
+                UPDATE search_spell_cache
+                SET hit_count = hit_count + 1,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                `
+            )
+            .run(row.id)
+
+        return {
+            correctedText: row.corrected_text,
+        }
+    }
+
+    upsertSpellCorrection(args: {
+        sourceText: string
+        language: string
+        provider: string
+        correctedText: string
+    }): void {
+        const sourceText = args.sourceText.trim()
+        const correctedText = args.correctedText.trim()
+        if (!sourceText || !correctedText) return
+
+        this.db
+            .prepare(
+                `
+                INSERT INTO search_spell_cache (source_text, language, corrected_text, provider, hit_count)
+                VALUES (?, ?, ?, ?, 1)
+                ON CONFLICT(source_text, language, provider)
+                DO UPDATE SET
+                  corrected_text = excluded.corrected_text,
+                  hit_count = search_spell_cache.hit_count + 1,
+                  updated_at = datetime('now')
+                `
+            )
+            .run(sourceText, args.language, correctedText, args.provider)
     }
 
     upsertIntent(queryId: number, intent: string): QueryIntentRecord {
@@ -317,6 +397,8 @@ export class SearchDBClient {
                     qi.intent AS intent_value,
                     qi.query_id AS query_id,
                     q.value AS query_value,
+                    q.language AS query_language,
+                    q.original_value AS query_original_value,
                     q.created_at AS query_created_at
                 FROM article a
                 LEFT JOIN query_intent qi ON qi.id = a.intent_id
@@ -336,6 +418,8 @@ export class SearchDBClient {
                   intent_value: string | null
                   query_id: number | null
                   query_value: string | null
+                  query_language: string | null
+                  query_original_value: string | null
                   query_created_at: string | null
               }
             | undefined
@@ -382,10 +466,17 @@ export class SearchDBClient {
             }
         }
 
-        if (row.query_id !== null && row.query_value !== null && row.query_created_at !== null) {
+        if (
+            row.query_id !== null &&
+            row.query_value !== null &&
+            row.query_created_at !== null &&
+            row.query_language !== null
+        ) {
             payload.query = {
                 id: row.query_id,
                 value: row.query_value,
+                language: row.query_language,
+                originalValue: row.query_original_value,
                 createdAt: row.query_created_at,
             }
         }
@@ -407,5 +498,83 @@ export class SearchDBClient {
             .get(queryId) as { id: number } | undefined
 
         return Boolean(row)
+    }
+
+    createQueryHistory(args: {
+        queryText: string
+        language: string
+        queryId?: number | null
+        dedupeWindowSeconds?: number
+    }): void {
+        const queryText = args.queryText.trim()
+        const language = args.language.trim()
+        if (!queryText || !language) return
+        const dedupeWindowSeconds = Number.isInteger(args.dedupeWindowSeconds) && (args.dedupeWindowSeconds ?? 0) > 0
+            ? (args.dedupeWindowSeconds as number)
+            : 300
+
+        const recentDuplicate = this.db
+            .prepare(
+                `
+                SELECT id
+                FROM query_history
+                WHERE lower(query_text) = lower(?)
+                  AND language = ?
+                  AND created_at >= datetime('now', ?)
+                ORDER BY id DESC
+                LIMIT 1
+                `
+            )
+            .get(queryText, language, `-${dedupeWindowSeconds} seconds`) as { id: number } | undefined
+        if (recentDuplicate) return
+
+        this.db
+            .prepare(
+                `
+                INSERT INTO query_history (query_text, language, query_id)
+                VALUES (?, ?, ?)
+                `
+            )
+            .run(queryText, language, args.queryId ?? null)
+    }
+
+    listRecentQueries(limit: number): SearchRecentQueryItem[] {
+        const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 8
+        const rows = this.db
+            .prepare(
+                `
+                SELECT
+                    query_text AS value,
+                    language,
+                    MAX(created_at) AS last_searched_at
+                FROM query_history
+                GROUP BY query_text, language
+                ORDER BY last_searched_at DESC
+                LIMIT ?
+                `
+            )
+            .all(safeLimit) as Array<{
+            value: string
+            language: string
+            last_searched_at: string
+        }>
+
+        return rows.map((row) => ({
+            value: row.value,
+            language: row.language,
+            lastSearchedAt: row.last_searched_at,
+        }))
+    }
+
+    getQueryHistoryCount(): number {
+        const row = this.db
+            .prepare(
+                `
+                SELECT COUNT(*) AS count
+                FROM query_history
+                `
+            )
+            .get() as { count: number } | undefined
+        return row?.count ?? 0
     }
 }

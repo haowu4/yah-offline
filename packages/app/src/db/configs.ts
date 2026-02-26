@@ -6,7 +6,7 @@ export const DefaultConfigs: {
     description?: string
 }[] = [
     {
-        key: "chat.models",
+        key: "llm.models",
         value: JSON.stringify([
             "gpt-5.2",
             "gpt-5.1",
@@ -29,17 +29,12 @@ export const DefaultConfigs: {
             "gpt-4o-2024-05-13",
             "gpt-4o-mini",
         ]),
-        description: "Available model candidates shown in the mail composer model selector (JSON array).",
-    },
-    {
-        key: "mail.default_contact",
-        value: "",
-        description: "Default contact slug preselected in mail composer. Empty means no default contact.",
+        description: "Available global LLM model candidates shown in selectors (JSON array).",
     },
     {
         key: "mail.default_model",
         value: "gpt-5.2-chat-latest",
-        description: "Fallback LLM model used when request/contact model is not provided.",
+        description: "Fallback LLM model used when request model is not provided.",
     },
     {
         key: "mail.summary_model",
@@ -62,14 +57,66 @@ export const DefaultConfigs: {
         description: "Estimated token threshold to trigger thread summary generation.",
     },
     {
-        key: "search.intent_model",
+        key: "search.intent_resolve.model",
         value: "gpt-5-mini",
-        description: "LLM model used for search intent extraction.",
+        description: "LLM model used for search intent resolution.",
     },
     {
-        key: "search.article_model",
+        key: "search.content_generation.model",
         value: "gpt-5.2-chat-latest",
-        description: "LLM model used for search article generation.",
+        description: "LLM model used for search content/article generation.",
+    },
+    {
+        key: "search.spelling_correction.model",
+        value: "gpt-5-mini",
+        description: "LLM model used for search spelling correction.",
+    },
+    {
+        key: "search.spell_correction_mode",
+        value: "auto",
+        description: "Spell correction mode for search query normalization: off|auto|force.",
+    },
+    {
+        key: "llm.baseurl",
+        value: "",
+        description: "Optional OpenAI-compatible base URL used by LLM calls. Leave empty for default OpenAI endpoint.",
+    },
+    {
+        key: "search.example_queries",
+        value: JSON.stringify([
+            "how to use sqlite fts5 with ranking",
+            "explain retrieval augmented generation step by step",
+            "debugging memory leak in node express app",
+            "best practices for typescript api error handling",
+            "compare vector databases for small self-hosted projects",
+            "how to write effective llm system prompts",
+        ]),
+        description: "Example queries shown on the search home screen for first-time users (JSON array).",
+    },
+    {
+        key: "search.recent.min_query_chars",
+        value: "3",
+        description: "Minimum query length required for storing search history.",
+    },
+    {
+        key: "search.recent.dedupe_window_seconds",
+        value: "300",
+        description: "Skip recording duplicate recent queries within this time window (in seconds).",
+    },
+    {
+        key: "search.recent.blacklist_terms",
+        value: JSON.stringify(["test", "testing", "asdf", "qwer", "zxcv", "1234"]),
+        description: "Exact query terms excluded from recent history chips (JSON array, case-insensitive).",
+    },
+    {
+        key: "llm.apikey.env_name",
+        value: "OPENAI_API_KEY",
+        description: "Environment variable name used to read API key when YAH_API_KEY_SOURCE=env.",
+    },
+    {
+        key: "llm.apikey.keychain_name",
+        value: "openai/default",
+        description: "Keychain entry name used to read API key when YAH_API_KEY_SOURCE=keychain.",
     },
     {
         key: "llm.retry.max_attempts",

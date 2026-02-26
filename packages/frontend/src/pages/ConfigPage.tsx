@@ -1,16 +1,107 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  applyConfigPreset,
   createConfig,
   deleteConfig,
   listConfigs,
   updateConfig,
   type ApiConfigItem,
+  type ConfigPresetName,
 } from '../lib/api/config'
 import styles from './ConfigPage.module.css'
 
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase()
+}
+
+const OPENAI_MODELS = [
+  'gpt-5.2',
+  'gpt-5.1',
+  'gpt-5',
+  'gpt-5-mini',
+  'gpt-5-nano',
+  'gpt-5.2-chat-latest',
+  'gpt-5.1-chat-latest',
+  'gpt-5-chat-latest',
+  'gpt-5.2-codex',
+  'gpt-5.1-codex-max',
+  'gpt-5.1-codex',
+  'gpt-5-codex',
+  'gpt-5.2-pro',
+  'gpt-5-pro',
+  'gpt-4.1',
+  'gpt-4.1-mini',
+  'gpt-4.1-nano',
+  'gpt-4o',
+  'gpt-4o-2024-05-13',
+  'gpt-4o-mini',
+]
+
+const ZAI_MODELS = [
+  'GLM-5',
+  'GLM-5-Code',
+  'GLM-4.7',
+  'GLM-4.7-FlashX',
+  'GLM-4.6',
+  'GLM-4.5',
+  'GLM-4.5-X',
+  'GLM-4.5-Air',
+  'GLM-4.5-AirX',
+  'GLM-4-32B-0414-128K',
+  'GLM-4.7-Flash',
+  'GLM-4.5-Flash',
+]
+
+const DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner']
+
+const MOONSHOT_MODELS = ['kimi-k2.5', 'kimi-k2-turbo-preview', 'kimi-k2-thinking', 'kimi-k2-thinking-turbo']
+
+const PRESET_PLANS: Record<ConfigPresetName, Record<string, string>> = {
+  openai: {
+    'llm.models': JSON.stringify(OPENAI_MODELS),
+    'mail.default_model': 'gpt-5.2-chat-latest',
+    'mail.summary_model': 'gpt-5-mini',
+    'search.content_generation.model': 'gpt-5.2-chat-latest',
+    'search.intent_resolve.model': 'gpt-5-mini',
+    'search.spelling_correction.model': 'gpt-5-mini',
+    'llm.baseurl': '',
+    'llm.apikey.env_name': 'OPENAI_API_KEY',
+    'llm.apikey.keychain_name': 'openai/default',
+  },
+  zai: {
+    'llm.models': JSON.stringify(ZAI_MODELS),
+    'mail.default_model': 'GLM-4.7',
+    'mail.summary_model': 'GLM-4.7-FlashX',
+    'search.content_generation.model': 'GLM-4.7',
+    'search.intent_resolve.model': 'GLM-4.7-FlashX',
+    'search.spelling_correction.model': 'GLM-4.7-FlashX',
+    'llm.baseurl': 'https://api.z.ai/api/paas/v4/',
+    'llm.apikey.env_name': 'ZAI_API_KEY',
+    'llm.apikey.keychain_name': 'zai/default',
+  },
+  deepseek: {
+    'llm.models': JSON.stringify(DEEPSEEK_MODELS),
+    'mail.default_model': 'deepseek-chat',
+    'mail.summary_model': 'deepseek-chat',
+    'search.content_generation.model': 'deepseek-chat',
+    'search.intent_resolve.model': 'deepseek-chat',
+    'search.spelling_correction.model': 'deepseek-chat',
+    'llm.baseurl': 'https://api.deepseek.com/v1',
+    'llm.apikey.env_name': 'DEEPSEEK_API_KEY',
+    'llm.apikey.keychain_name': 'deepseek/default',
+  },
+  moonshot: {
+    'llm.models': JSON.stringify(MOONSHOT_MODELS),
+    'mail.default_model': 'kimi-k2.5',
+    'mail.summary_model': 'kimi-k2-turbo-preview',
+    'search.content_generation.model': 'kimi-k2.5',
+    'search.intent_resolve.model': 'kimi-k2-turbo-preview',
+    'search.spelling_correction.model': 'kimi-k2-turbo-preview',
+    'llm.baseurl': 'https://api.moonshot.ai/v1',
+    'llm.apikey.env_name': 'MOONSHOT_API_KEY',
+    'llm.apikey.keychain_name': 'moonshot/default',
+  },
 }
 
 export function ConfigPage() {
@@ -31,6 +122,8 @@ export function ConfigPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [pendingDeleteKey, setPendingDeleteKey] = useState<string | null>(null)
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({})
+  const [isApplyingPreset, setIsApplyingPreset] = useState<ConfigPresetName | null>(null)
+  const [pendingPreset, setPendingPreset] = useState<ConfigPresetName | null>(null)
 
   useEffect(() => {
     document.title = 'Config | yah'
@@ -146,6 +239,41 @@ export function ConfigPage() {
     }))
   }
 
+  const handleApplyPreset = async (preset: ConfigPresetName) => {
+    try {
+      setIsApplyingPreset(preset)
+      await applyConfigPreset(preset)
+      await fetchConfigs()
+      setError(null)
+      setNotice(`Applied preset "${preset}"`)
+      setPendingPreset(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to apply preset')
+    } finally {
+      setIsApplyingPreset(null)
+    }
+  }
+
+  const configValueByKey = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const item of configs) {
+      map[item.key] = item.value
+    }
+    return map
+  }, [configs])
+
+  const pendingPresetChanges = useMemo(() => {
+    if (!pendingPreset) return []
+    const target = PRESET_PLANS[pendingPreset]
+    return Object.entries(target)
+      .map(([key, nextValue]) => ({
+        key,
+        currentValue: configValueByKey[key] ?? '',
+        nextValue,
+      }))
+      .filter((item) => item.currentValue !== item.nextValue)
+  }, [configValueByKey, pendingPreset])
+
   return (
     <div className={styles.container}>
       <div className={styles.header}>
@@ -154,6 +282,46 @@ export function ConfigPage() {
       {error ? <p className={styles.error}>{error}</p> : null}
       {notice ? <p className={styles.notice}>{notice}</p> : null}
       {isLoading ? <p className={styles.status}>Loading configs...</p> : null}
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>LLM Presets</h2>
+        </div>
+        <div className={styles.presetRow}>
+          <button
+            type="button"
+            className={styles.button}
+            disabled={isApplyingPreset !== null}
+            onClick={() => void handleApplyPreset('openai')}
+          >
+            {isApplyingPreset === 'openai' ? 'Applying...' : 'OpenAI'}
+          </button>
+          <button
+            type="button"
+            className={styles.buttonSecondary}
+            disabled={isApplyingPreset !== null}
+            onClick={() => void handleApplyPreset('zai')}
+          >
+            {isApplyingPreset === 'zai' ? 'Applying...' : 'z.ai'}
+          </button>
+          <button
+            type="button"
+            className={styles.buttonSecondary}
+            disabled={isApplyingPreset !== null}
+            onClick={() => void handleApplyPreset('deepseek')}
+          >
+            {isApplyingPreset === 'deepseek' ? 'Applying...' : 'DeepSeek'}
+          </button>
+          <button
+            type="button"
+            className={styles.buttonSecondary}
+            disabled={isApplyingPreset !== null}
+            onClick={() => void handleApplyPreset('moonshot')}
+          >
+            {isApplyingPreset === 'moonshot' ? 'Applying...' : 'Moonshot'}
+          </button>
+        </div>
+      </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>

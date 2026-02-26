@@ -56,24 +56,15 @@ export const migrations: Migration[] = [
         DROP TABLE IF EXISTS mail_message;
         DROP TABLE IF EXISTS mail_thread;
         DROP TABLE IF EXISTS contact;
+        DROP TABLE IF EXISTS mail_contact;
+        DROP TABLE IF EXISTS mail_thread_contact_context;
         DROP TABLE IF EXISTS mail_search_fts;
-
-        CREATE TABLE IF NOT EXISTS mail_contact (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            slug TEXT NOT NULL UNIQUE,
-            name TEXT NOT NULL,
-            instruction TEXT NOT NULL DEFAULT '',
-            icon TEXT NOT NULL DEFAULT 'user',
-            color TEXT NOT NULL DEFAULT '#6b7280',
-            default_model TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
 
         CREATE TABLE IF NOT EXISTS mail_thread (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             thread_uid TEXT NOT NULL UNIQUE,
             title TEXT NOT NULL DEFAULT '',
+            user_set_title INTEGER NOT NULL DEFAULT 0 CHECK (user_set_title IN (0, 1)),
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -82,7 +73,6 @@ export const migrations: Migration[] = [
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             thread_id INTEGER NOT NULL,
             role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-            contact_id INTEGER,
             model TEXT,
             content TEXT NOT NULL DEFAULT '',
             unread INTEGER NOT NULL DEFAULT 0 CHECK (unread IN (0, 1)),
@@ -90,11 +80,9 @@ export const migrations: Migration[] = [
             status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'streaming', 'completed', 'error')),
             error_message TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (thread_id) REFERENCES mail_thread(id) ON DELETE CASCADE,
-            FOREIGN KEY (contact_id) REFERENCES mail_contact(id) ON DELETE SET NULL
+            FOREIGN KEY (thread_id) REFERENCES mail_thread(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_mail_reply_thread_id ON mail_reply(thread_id);
-        CREATE INDEX IF NOT EXISTS idx_mail_reply_contact_id ON mail_reply(contact_id);
         CREATE INDEX IF NOT EXISTS idx_mail_reply_unread ON mail_reply(unread);
         CREATE INDEX IF NOT EXISTS idx_mail_reply_created_at ON mail_reply(created_at);
 
@@ -115,18 +103,16 @@ export const migrations: Migration[] = [
         );
         CREATE INDEX IF NOT EXISTS idx_mail_attachment_reply_id ON mail_attachment(reply_id);
 
-        CREATE TABLE IF NOT EXISTS mail_thread_contact_context (
+        CREATE TABLE IF NOT EXISTS mail_thread_context (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             thread_id INTEGER NOT NULL,
-            contact_id INTEGER NOT NULL,
             summary_text TEXT NOT NULL DEFAULT '',
             summary_token_count INTEGER NOT NULL DEFAULT 0,
             last_summarized_reply_id INTEGER,
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (thread_id) REFERENCES mail_thread(id) ON DELETE CASCADE,
-            FOREIGN KEY (contact_id) REFERENCES mail_contact(id) ON DELETE CASCADE,
             FOREIGN KEY (last_summarized_reply_id) REFERENCES mail_reply(id) ON DELETE SET NULL,
-            UNIQUE (thread_id, contact_id)
+            UNIQUE (thread_id)
         );
 
         CREATE TABLE IF NOT EXISTS llm_job (
@@ -259,11 +245,117 @@ export const migrations: Migration[] = [
     {
         name: "004_mail_contact_icon_location",
         sql: `
-        ALTER TABLE mail_contact ADD COLUMN icon_location TEXT;
+        -- no-op: contact support removed
+        `,
+    },
+    {
+        name: "005_search_language_spell_cache",
+        sql: `
+        CREATE TABLE IF NOT EXISTS query_next (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            value TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'auto',
+            original_value TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (value, language)
+        );
 
-        UPDATE mail_contact
-        SET icon_location = printf('%d-%s.png', id, slug)
-        WHERE icon_location IS NULL OR trim(icon_location) = '';
+        INSERT INTO query_next (id, value, language, original_value, created_at)
+        SELECT id, value, 'auto', value, created_at
+        FROM query;
+
+        DROP TABLE IF EXISTS query;
+        ALTER TABLE query_next RENAME TO query;
+
+        CREATE TABLE IF NOT EXISTS search_spell_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_text TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'auto',
+            corrected_text TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            hit_count INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (source_text, language, provider)
+        );
+        CREATE INDEX IF NOT EXISTS idx_search_spell_cache_source_lang_provider
+          ON search_spell_cache(source_text, language, provider);
+        `,
+    },
+    {
+        name: "006_search_query_history_and_language_en",
+        sql: `
+        CREATE TABLE IF NOT EXISTS query_next2 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            value TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'en',
+            original_value TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (value, language)
+        );
+
+        INSERT INTO query_next2 (id, value, language, original_value, created_at)
+        SELECT
+            id,
+            value,
+            CASE
+                WHEN language IS NULL OR trim(language) = '' OR lower(language) = 'auto' THEN 'en'
+                ELSE language
+            END,
+            original_value,
+            created_at
+        FROM query;
+
+        DROP TABLE IF EXISTS query;
+        ALTER TABLE query_next2 RENAME TO query;
+
+        DROP TABLE IF EXISTS search_spell_cache;
+        CREATE TABLE IF NOT EXISTS search_spell_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_text TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'en',
+            corrected_text TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            hit_count INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (source_text, language, provider)
+        );
+        CREATE INDEX IF NOT EXISTS idx_search_spell_cache_source_lang_provider
+          ON search_spell_cache(source_text, language, provider);
+
+        CREATE TABLE IF NOT EXISTS query_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_text TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'en',
+            query_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (query_id) REFERENCES query(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_query_history_created_at ON query_history(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_query_history_query_text_lang ON query_history(query_text, language);
+        `,
+    },
+    {
+        name: "007_config_key_renames_for_llm",
+        sql: `
+        INSERT INTO config_value (key, value, description)
+        SELECT 'llm.models', value, description
+        FROM config_value
+        WHERE key = 'chat.models'
+        ON CONFLICT(key) DO NOTHING;
+
+        DELETE FROM config_value
+        WHERE key = 'chat.models';
+
+        INSERT INTO config_value (key, value, description)
+        SELECT 'llm.baseurl', value, description
+        FROM config_value
+        WHERE key = 'search.openai.base_url'
+        ON CONFLICT(key) DO NOTHING;
+
+        DELETE FROM config_value
+        WHERE key = 'search.openai.base_url';
         `,
     },
 ]

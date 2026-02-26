@@ -62,12 +62,10 @@ export abstract class AbstractMagicApi {
   }): Promise<MagicSearchArticleResult>
 
   abstract summarize(args: {
-    assistantDescription?: string
     messages: MagicChatMessage[]
   }): Promise<{ summary: string }>
 
   abstract createReply(args: {
-    assistantDescription?: string
     summary: string
     history: MagicChatMessage[]
     userInput: string

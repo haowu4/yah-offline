@@ -17,8 +17,6 @@ function main() {
   runMigrations(db)
 
   const mail = new MailDBClient(db)
-  const alice = mail.createContact({ name: "Alice" })
-  const bob = mail.createContact({ name: "Bob" })
 
   const threadTitleMatch = mail.createThread({ title: "Quarterly Plan" })
   const threadReplyMatch = mail.createThread({ title: "Weekly Sync" })
@@ -27,7 +25,6 @@ function main() {
   const replyTitleThread = mail.createReply({
     threadId: threadTitleMatch.id,
     role: "user",
-    contactId: alice.id,
     content: "hello there",
     unread: false,
   })
@@ -36,7 +33,6 @@ function main() {
   const replyContentThread = mail.createReply({
     threadId: threadReplyMatch.id,
     role: "assistant",
-    contactId: bob.id,
     content: "The roadmap includes phoenix launch milestones.",
     unread: false,
   })
@@ -45,7 +41,6 @@ function main() {
   const replyAttachmentThread = mail.createReply({
     threadId: threadAttachmentMatch.id,
     role: "assistant",
-    contactId: bob.id,
     content: "See attachment",
     unread: false,
   })
@@ -96,14 +91,6 @@ function main() {
     [threadReplyMatch.threadUid],
     "reply timestamp date window should filter by reply created_at"
   )
-
-  const contactFiltered = threadUids(
-    mail.listThreads({
-      contactSlug: alice.slug,
-      keyword: "Quarterly",
-    })
-  )
-  assert.deepEqual(contactFiltered, [threadTitleMatch.threadUid], "contact filter should combine with keyword")
 
   db.close()
   console.log("Mail search test passed.")

@@ -13,6 +13,16 @@
   letter-spacing: 0.1px;
 }
 
+.inlineButton {
+  border: 0;
+  background: transparent;
+  color: #1f4fbf;
+  font-size: 13px;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .statusDots {
   display: inline-flex;
   width: 1.8em;
@@ -146,6 +156,61 @@
   align-items: center;
 }
 
+.suggestionsPanel {
+  width: min(980px, 100%);
+  margin-top: 8px;
+  display: grid;
+  gap: 12px;
+}
+
+.suggestionsSection {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #fff;
+  padding: 10px;
+}
+
+.suggestionsTitle {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.suggestionGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.suggestionChip {
+  border: 1px solid #c7ced9;
+  border-radius: 2px;
+  background: #fff;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.suggestionChip:hover {
+  background: #f3f7ff;
+  border-color: #90a8de;
+}
+
+.recentMeta {
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
 .homeInput {
   flex: 1;
   height: 54px;
@@ -184,6 +249,11 @@
 
   .homeTitle {
     font-size: 34px;
+  }
+
+  .homeForm {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 

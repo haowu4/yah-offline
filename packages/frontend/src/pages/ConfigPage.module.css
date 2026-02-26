@@ -44,6 +44,13 @@
   text-transform: uppercase;
 }
 
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+}
+
 .createForm {
   display: grid;
   gap: 10px;

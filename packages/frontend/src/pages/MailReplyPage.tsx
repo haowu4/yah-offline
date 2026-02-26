@@ -112,9 +112,6 @@ export function MailReplyPage() {
               <strong>Role:</strong> {reply.role}
             </span>
             <span className={styles.metaItem}>
-              <strong>Contact:</strong> {reply.contact?.name || '-'}
-            </span>
-            <span className={styles.metaItem}>
               <strong>Model:</strong> {reply.model || '-'}
             </span>
             <span className={styles.metaItem}>

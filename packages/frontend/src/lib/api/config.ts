@@ -23,6 +23,8 @@ export type ApiConfigItem = {
   description: string
 }
 
+export type ConfigPresetName = 'openai' | 'zai' | 'deepseek' | 'moonshot'
+
 export async function listConfigs(): Promise<{ configs: ApiConfigItem[] }> {
   return apiFetch('/config')
 }
@@ -52,5 +54,13 @@ export async function updateConfig(
 export async function deleteConfig(key: string): Promise<{ ok: boolean }> {
   return apiFetch(`/config/${encodeURIComponent(key)}`, {
     method: 'DELETE',
+  })
+}
+
+export async function applyConfigPreset(
+  preset: ConfigPresetName
+): Promise<{ ok: boolean; preset: ConfigPresetName }> {
+  return apiFetch(`/config/preset/${encodeURIComponent(preset)}`, {
+    method: 'POST',
   })
 }

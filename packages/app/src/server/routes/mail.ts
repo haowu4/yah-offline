@@ -1,7 +1,4 @@
 import { Router } from "express"
-import fs from "node:fs"
-import path from "node:path"
-import multer from "multer"
 import { AppCtx } from "../../appCtx.js"
 import { EventDispatcher } from "../llm/eventDispatcher.js"
 import { logDebugJson, logLine } from "../../logging/index.js"
@@ -85,24 +82,14 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
   const mailDB = ctx.dbClients.mail()
   const llmDB = ctx.dbClients.llm()
   const configDB = ctx.dbClients.config()
-  const iconUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-      fileSize: 2 * 1024 * 1024,
-    },
-    fileFilter: (_req: unknown, file: { mimetype?: string }, callback: (error: Error | null, acceptFile?: boolean) => void) => {
-      if (file.mimetype === "image/png") {
-        callback(null, true)
-        return
-      }
-      callback(new Error("Only PNG files are allowed"))
-    },
-  }).single("icon")
 
-  const getContactIconDir = () => path.join(ctx.config.app.storagePath, "contact", "icons")
-  const getContactIconPath = (location: string) => path.join(getContactIconDir(), location)
+  router.get("/mail/thread/:thread_uid/stream", (req, res) => {
+    const thread = mailDB.getThreadByUid(req.params.thread_uid)
+    if (!thread) {
+      res.status(404).json({ error: "thread not found" })
+      return
+    }
 
-  router.get("/mail/stream", (req, res) => {
     res.setHeader("Content-Type", "text/event-stream")
     res.setHeader("Cache-Control", "no-cache, no-transform")
     res.setHeader("Connection", "keep-alive")
@@ -124,6 +111,7 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
       ? eventDispatcher.replayAfter({
           topic: "mail",
           lastEventId,
+          entityId: thread.threadUid,
         })
       : []
 
@@ -135,6 +123,7 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
 
     const unsubscribe = eventDispatcher.subscribe({
       topic: "mail",
+      entityId: thread.threadUid,
       send: ({ id, event }) => {
         res.write(`id: ${id}\n`)
         res.write(`event: ${event.type}\n`)
@@ -159,174 +148,6 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
     })
   })
 
-  router.get("/mail/contact", (req, res) => {
-    res.json({ contacts: mailDB.listContacts() })
-  })
-
-  router.post("/mail/contact", (req, res) => {
-    const name = typeof req.body?.name === "string" ? req.body.name : ""
-    if (!name.trim()) {
-      res.status(400).json({ error: "name is required" })
-      return
-    }
-
-    try {
-      const contact = mailDB.createContact({
-        slug: typeof req.body?.slug === "string" ? req.body.slug : undefined,
-        name,
-        instruction:
-          typeof req.body?.instruction === "string" ? req.body.instruction : undefined,
-        icon: typeof req.body?.icon === "string" ? req.body.icon : undefined,
-        color: typeof req.body?.color === "string" ? req.body.color : undefined,
-        defaultModel:
-          typeof req.body?.defaultModel === "string" ? req.body.defaultModel : undefined,
-      })
-
-      res.json({ contact })
-    } catch (error) {
-      res.status(400).json({
-        error: error instanceof Error ? error.message : "Failed to create contact",
-      })
-    }
-  })
-
-  router.get("/mail/contact/:slug", (req, res) => {
-    const slug = req.params.slug?.trim()
-    if (!slug) {
-      res.status(400).json({ error: "slug is required" })
-      return
-    }
-
-    const contact = mailDB.getContactBySlug(slug)
-    if (!contact) {
-      res.status(404).json({ error: "contact not found" })
-      return
-    }
-
-    res.json({ contact })
-  })
-
-  router.put("/mail/contact/:slug", (req, res) => {
-    const slug = req.params.slug?.trim()
-    if (!slug) {
-      res.status(400).json({ error: "slug is required" })
-      return
-    }
-
-    try {
-      const previousContact = mailDB.getContactBySlug(slug)
-      if (!previousContact) {
-        res.status(404).json({ error: "contact not found" })
-        return
-      }
-
-      const contact = mailDB.updateContactBySlug(slug, {
-        slug: typeof req.body?.slug === "string" ? req.body.slug : undefined,
-        name: typeof req.body?.name === "string" ? req.body.name : undefined,
-        instruction:
-          typeof req.body?.instruction === "string" ? req.body.instruction : undefined,
-        icon: typeof req.body?.icon === "string" ? req.body.icon : undefined,
-        color: typeof req.body?.color === "string" ? req.body.color : undefined,
-        defaultModel:
-          typeof req.body?.defaultModel === "string" ? req.body.defaultModel : undefined,
-      })
-
-      if (!contact) {
-        res.status(404).json({ error: "contact not found" })
-        return
-      }
-
-      if (
-        previousContact.iconLocation &&
-        contact.iconLocation &&
-        previousContact.iconLocation !== contact.iconLocation
-      ) {
-        const previousPath = getContactIconPath(previousContact.iconLocation)
-        const nextPath = getContactIconPath(contact.iconLocation)
-        if (fs.existsSync(previousPath)) {
-          fs.mkdirSync(path.dirname(nextPath), { recursive: true })
-          if (fs.existsSync(nextPath)) {
-            fs.rmSync(nextPath, { force: true })
-          }
-          fs.renameSync(previousPath, nextPath)
-        }
-      }
-
-      res.json({ contact })
-    } catch (error) {
-      res.status(400).json({
-        error: error instanceof Error ? error.message : "Failed to update contact",
-      })
-    }
-  })
-
-  router.put("/mail/contact/:slug/icon", (req, res) => {
-    iconUpload(req, res, (uploadError: unknown) => {
-      if (uploadError) {
-        if (
-          uploadError instanceof multer.MulterError &&
-          (uploadError as { code?: string }).code === "LIMIT_FILE_SIZE"
-        ) {
-          res.status(400).json({ error: "Icon file exceeds 2MB limit" })
-          return
-        }
-        res.status(400).json({
-          error: uploadError instanceof Error ? uploadError.message : "Invalid icon upload",
-        })
-        return
-      }
-
-      const slug = req.params.slug?.trim()
-      if (!slug) {
-        res.status(400).json({ error: "slug is required" })
-        return
-      }
-
-      const contact = mailDB.getContactBySlug(slug)
-      if (!contact) {
-        res.status(404).json({ error: "contact not found" })
-        return
-      }
-
-      const file = (req as { file?: { buffer: Buffer } }).file
-      if (!file) {
-        res.status(400).json({ error: "icon file is required" })
-        return
-      }
-
-      const iconLocation = contact.iconLocation || `${contact.id}-${contact.slug}.png`
-      const iconPath = getContactIconPath(iconLocation)
-      fs.mkdirSync(path.dirname(iconPath), { recursive: true })
-      fs.writeFileSync(iconPath, file.buffer)
-
-      const updated = mailDB.getContactById(contact.id)
-      res.json({ contact: updated })
-    })
-  })
-
-  router.get("/mail/contact/:slug/icon", (req, res) => {
-    const slug = req.params.slug?.trim()
-    if (!slug) {
-      res.status(400).json({ error: "slug is required" })
-      return
-    }
-
-    const contact = mailDB.getContactBySlug(slug)
-    if (!contact || !contact.iconLocation) {
-      res.status(404).json({ error: "icon not found" })
-      return
-    }
-
-    const iconPath = getContactIconPath(contact.iconLocation)
-    if (!fs.existsSync(iconPath)) {
-      res.status(404).json({ error: "icon not found" })
-      return
-    }
-
-    res.setHeader("Content-Type", "image/png")
-    res.sendFile(iconPath)
-  })
-
   router.get("/mail/thread", (req, res) => {
     const fromDate = parseDate(req.query.from)
     const toDate = parseDate(req.query.to)
@@ -336,8 +157,6 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
     const toReplyAtExclusive = toDate ? getUtcRangeEndExclusiveFromLocalDate(toDate, tzOffsetMinutes) : undefined
 
     const payload = mailDB.listThreads({
-      contactSlug:
-        typeof req.query.contact === "string" ? req.query.contact.trim() || undefined : undefined,
       fromReplyAt: fromReplyAt || undefined,
       toReplyAtExclusive: toReplyAtExclusive || undefined,
       keyword: typeof req.query.keyword === "string" ? req.query.keyword.trim() || undefined : undefined,
@@ -355,14 +174,6 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
       return
     }
 
-    const contactSlug = typeof req.body?.contactSlug === "string" ? req.body.contactSlug.trim() : ""
-    const contact = contactSlug ? mailDB.getContactBySlug(contactSlug) : null
-
-    if (contactSlug && !contact) {
-      res.status(400).json({ error: "contact not found" })
-      return
-    }
-
     const thread = mailDB.createThread({
       title: typeof req.body?.title === "string" ? req.body.title : "",
     })
@@ -370,7 +181,6 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
     const userReply = mailDB.createReply({
       threadId: thread.id,
       role: "user",
-      contactId: contact?.id ?? null,
       model: typeof req.body?.model === "string" ? req.body.model : null,
       content,
       unread: false,
@@ -417,7 +227,6 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
       payload: {
         threadId: thread.id,
         userReplyId: userReply.id,
-        requestedContactId: contact?.id ?? null,
         requestedModel: typeof req.body?.model === "string" ? req.body.model : null,
       },
     })
@@ -449,6 +258,36 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
     res.json(payload)
   })
 
+  router.put("/mail/thread/:thread_uid", (req, res) => {
+    const thread = mailDB.getThreadByUid(req.params.thread_uid)
+    if (!thread) {
+      res.status(404).json({ error: "thread not found" })
+      return
+    }
+
+    if (typeof req.body?.title !== "string") {
+      res.status(400).json({ error: "title is required" })
+      return
+    }
+
+    mailDB.updateThreadTitle(thread.id, req.body.title, { userSetTitle: true })
+    const updated = mailDB.getThreadById(thread.id)
+
+    eventDispatcher.emit({
+      topic: "mail",
+      entityId: thread.threadUid,
+      event: {
+        type: "mail.thread.updated",
+        threadUid: thread.threadUid,
+        updatedAt: updated?.updatedAt ?? new Date().toISOString(),
+      },
+    })
+
+    res.json({
+      thread: updated,
+    })
+  })
+
   router.post("/mail/thread/:thread_uid/reply", (req, res) => {
     const thread = mailDB.getThreadByUid(req.params.thread_uid)
     if (!thread) {
@@ -462,18 +301,9 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
       return
     }
 
-    const contactSlug = typeof req.body?.contactSlug === "string" ? req.body.contactSlug.trim() : ""
-    const contact = contactSlug ? mailDB.getContactBySlug(contactSlug) : null
-
-    if (contactSlug && !contact) {
-      res.status(400).json({ error: "contact not found" })
-      return
-    }
-
     const reply = mailDB.createReply({
       threadId: thread.id,
       role: "user",
-      contactId: contact?.id ?? null,
       model: typeof req.body?.model === "string" ? req.body.model : null,
       content,
       unread: false,
@@ -487,7 +317,6 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
       payload: {
         threadId: thread.id,
         userReplyId: reply.id,
-        requestedContactId: contact?.id ?? null,
         requestedModel: typeof req.body?.model === "string" ? req.body.model : null,
       },
     })
@@ -592,7 +421,7 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
   )
 
   router.get("/mail/config/model-candidates", (req, res) => {
-    const raw = configDB.getValue("chat.models")
+    const raw = configDB.getValue("llm.models")
     try {
       const value = raw ? JSON.parse(raw) : []
       if (Array.isArray(value)) {
@@ -628,12 +457,6 @@ export function createMailRouter(ctx: AppCtx, eventDispatcher: EventDispatcher) 
         "gpt-4o-mini",
       ],
     })
-  })
-
-  router.get("/mail/config/composer", (req, res) => {
-    const defaultContactRaw = configDB.getValue("mail.default_contact")
-    const defaultContact = defaultContactRaw?.trim() || null
-    res.json({ defaultContact })
   })
 
   return router

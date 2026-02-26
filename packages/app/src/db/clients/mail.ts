@@ -4,7 +4,6 @@ import {
   MailAttachmentDetailPayload,
   MailAttachmentRecord,
   MailAttachmentSummary,
-  MailContactRecord,
   MailReplyDetailPayload,
   MailReplyRecord,
   MailThreadDetailPayload,
@@ -25,15 +24,10 @@ function toBool(value: number): boolean {
   return value === 1
 }
 
-function buildContactIconLocation(contactId: number, slug: string): string {
-  return `${contactId}-${slug}.png`
-}
-
 function toReplyRecord(row: {
   id: number
   thread_id: number
   role: "user" | "assistant" | "system"
-  contact_id: number | null
   model: string | null
   content: string
   unread: number
@@ -46,7 +40,6 @@ function toReplyRecord(row: {
     id: row.id,
     threadId: row.thread_id,
     role: row.role,
-    contactId: row.contact_id,
     model: row.model,
     content: row.content,
     unread: toBool(row.unread),
@@ -87,225 +80,19 @@ export class MailDBClient {
     return `${collapsed.slice(0, 217)}...`
   }
 
-  private getUniqueContactSlug(base: string, excludeId?: number): string {
-    const normalizedBase = slugify(base)
-    let candidate = normalizedBase
-    let index = 2
-
-    while (true) {
-      const row = this.db
-        .prepare(
-          `
-            SELECT id FROM mail_contact
-            WHERE slug = ?
-          `
-        )
-        .get(candidate) as { id: number } | undefined
-
-      if (!row) return candidate
-      if (excludeId && row.id === excludeId) return candidate
-      candidate = `${normalizedBase}-${index}`
-      index += 1
-    }
-  }
-
-  listContacts(): MailContactRecord[] {
-    const rows = this.db
-      .prepare(
-        `
-          SELECT id, slug, name, instruction, icon, icon_location, color, default_model, created_at, updated_at
-          FROM mail_contact
-          ORDER BY name COLLATE NOCASE ASC, id ASC
-        `
-      )
-      .all() as Array<{
-      id: number
-      slug: string
-      name: string
-      instruction: string
-      icon: string
-      icon_location: string | null
-      color: string
-      default_model: string | null
-      created_at: string
-      updated_at: string
-    }>
-
-    return rows.map((row) => ({
-      id: row.id,
-      slug: row.slug,
-      name: row.name,
-      instruction: row.instruction,
-      icon: row.icon,
-      iconLocation: row.icon_location,
-      color: row.color,
-      defaultModel: row.default_model,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }))
-  }
-
-  createContact(args: {
-    slug?: string
-    name: string
-    instruction?: string
-    icon?: string
-    color?: string
-    defaultModel?: string | null
-  }): MailContactRecord {
-    const name = args.name.trim()
-    if (!name) throw new Error("Contact name is required")
-
-    const desiredSlug = args.slug?.trim() || name
-    const slug = this.getUniqueContactSlug(desiredSlug)
-    const instruction = args.instruction?.trim() ?? ""
-    const icon = args.icon?.trim() || "user"
-    const color = args.color?.trim() || "#6b7280"
-    const defaultModel = args.defaultModel?.trim() || null
-
-    const result = this.db
-      .prepare(
-        `
-          INSERT INTO mail_contact (slug, name, instruction, icon, icon_location, color, default_model)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `
-      )
-      .run(slug, name, instruction, icon, null, color, defaultModel)
-
-    const contactId = result.lastInsertRowid as number
-    this.db
-      .prepare("UPDATE mail_contact SET icon_location = ? WHERE id = ?")
-      .run(buildContactIconLocation(contactId, slug), contactId)
-
-    return this.getContactById(contactId)
-  }
-
-  getContactBySlug(slug: string): MailContactRecord | null {
-    const normalized = slug.trim()
-    if (!normalized) return null
-
-    const row = this.db
-      .prepare(
-        `
-          SELECT id, slug, name, instruction, icon, icon_location, color, default_model, created_at, updated_at
-          FROM mail_contact
-          WHERE slug = ?
-        `
-      )
-      .get(normalized) as
-      | {
-          id: number
-          slug: string
-          name: string
-          instruction: string
-          icon: string
-          icon_location: string | null
-          color: string
-          default_model: string | null
-          created_at: string
-          updated_at: string
-        }
-      | undefined
-
-    if (!row) return null
-
-    return {
-      id: row.id,
-      slug: row.slug,
-      name: row.name,
-      instruction: row.instruction,
-      icon: row.icon,
-      iconLocation: row.icon_location,
-      color: row.color,
-      defaultModel: row.default_model,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }
-  }
-
-  getContactById(id: number): MailContactRecord {
-    const row = this.getContactBySlug(
-      (
-        this.db
-          .prepare("SELECT slug FROM mail_contact WHERE id = ?")
-          .get(id) as { slug: string } | undefined
-      )?.slug ?? ""
-    )
-
-    if (!row) throw new Error("Contact not found")
-    return row
-  }
-
-  updateContactBySlug(
-    slug: string,
-    args: {
-      slug?: string
-      name?: string
-      instruction?: string
-      icon?: string
-      color?: string
-      defaultModel?: string | null
-    }
-  ): MailContactRecord | null {
-    const current = this.getContactBySlug(slug)
-    if (!current) return null
-
-    const nextName = args.name == null ? current.name : args.name.trim()
-    if (!nextName) throw new Error("Contact name is required")
-
-    const nextSlug =
-      args.slug == null
-        ? current.slug
-        : this.getUniqueContactSlug(args.slug.trim() || current.slug, current.id)
-
-    const nextInstruction = args.instruction == null ? current.instruction : args.instruction.trim()
-    const nextIcon = args.icon == null ? current.icon : args.icon.trim() || "user"
-    const nextColor = args.color == null ? current.color : args.color.trim() || "#6b7280"
-    const nextDefaultModel =
-      args.defaultModel == null ? current.defaultModel : args.defaultModel?.trim() || null
-    const nextIconLocation = buildContactIconLocation(current.id, nextSlug)
-
-    this.db
-      .prepare(
-        `
-          UPDATE mail_contact
-          SET slug = ?,
-              name = ?,
-              instruction = ?,
-              icon = ?,
-              icon_location = ?,
-              color = ?,
-              default_model = ?,
-              updated_at = datetime('now')
-          WHERE id = ?
-        `
-      )
-      .run(
-        nextSlug,
-        nextName,
-        nextInstruction,
-        nextIcon,
-        nextIconLocation,
-        nextColor,
-        nextDefaultModel,
-        current.id
-      )
-
-    return this.getContactById(current.id)
-  }
-
   createThread(args?: { title?: string }): MailThreadRecord {
     const threadUid = randomUUID()
     const title = args?.title?.trim() ?? ""
+    const userSetTitle = title.length > 0 ? 1 : 0
 
     const result = this.db
       .prepare(
         `
-          INSERT INTO mail_thread (thread_uid, title)
-          VALUES (?, ?)
+          INSERT INTO mail_thread (thread_uid, title, user_set_title)
+          VALUES (?, ?, ?)
         `
       )
-      .run(threadUid, title)
+      .run(threadUid, title, userSetTitle)
 
     return this.getThreadByIdStrict(result.lastInsertRowid as number)
   }
@@ -314,7 +101,7 @@ export class MailDBClient {
     const row = this.db
       .prepare(
         `
-          SELECT id, thread_uid, title, created_at, updated_at
+          SELECT id, thread_uid, title, user_set_title, created_at, updated_at
           FROM mail_thread
           WHERE thread_uid = ?
         `
@@ -324,6 +111,7 @@ export class MailDBClient {
           id: number
           thread_uid: string
           title: string
+          user_set_title: number
           created_at: string
           updated_at: string
         }
@@ -335,6 +123,7 @@ export class MailDBClient {
       id: row.id,
       threadUid: row.thread_uid,
       title: row.title,
+      userSetTitle: toBool(row.user_set_title),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }
@@ -344,7 +133,7 @@ export class MailDBClient {
     const row = this.db
       .prepare(
         `
-          SELECT id, thread_uid, title, created_at, updated_at
+          SELECT id, thread_uid, title, user_set_title, created_at, updated_at
           FROM mail_thread
           WHERE id = ?
         `
@@ -354,6 +143,7 @@ export class MailDBClient {
           id: number
           thread_uid: string
           title: string
+          user_set_title: number
           created_at: string
           updated_at: string
         }
@@ -365,6 +155,7 @@ export class MailDBClient {
       id: row.id,
       threadUid: row.thread_uid,
       title: row.title,
+      userSetTitle: toBool(row.user_set_title),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }
@@ -374,7 +165,7 @@ export class MailDBClient {
     const row = this.db
       .prepare(
         `
-          SELECT id, thread_uid, title, created_at, updated_at
+          SELECT id, thread_uid, title, user_set_title, created_at, updated_at
           FROM mail_thread
           WHERE id = ?
         `
@@ -384,6 +175,7 @@ export class MailDBClient {
           id: number
           thread_uid: string
           title: string
+          user_set_title: number
           created_at: string
           updated_at: string
         }
@@ -395,21 +187,23 @@ export class MailDBClient {
       id: row.id,
       threadUid: row.thread_uid,
       title: row.title,
+      userSetTitle: toBool(row.user_set_title),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }
   }
 
-  updateThreadTitle(threadId: number, title: string): void {
+  updateThreadTitle(threadId: number, title: string, args?: { userSetTitle?: boolean }): void {
+    const userSetTitle = args?.userSetTitle ? 1 : 0
     this.db
       .prepare(
         `
           UPDATE mail_thread
-          SET title = ?, updated_at = datetime('now')
+          SET title = ?, user_set_title = ?, updated_at = datetime('now')
           WHERE id = ?
         `
       )
-      .run(title.trim(), threadId)
+      .run(title.trim(), userSetTitle, threadId)
   }
 
   touchThread(threadId: number): void {
@@ -421,7 +215,6 @@ export class MailDBClient {
   createReply(args: {
     threadId: number
     role: "user" | "assistant" | "system"
-    contactId?: number | null
     model?: string | null
     content: string
     unread: boolean
@@ -436,15 +229,14 @@ export class MailDBClient {
       .prepare(
         `
           INSERT INTO mail_reply (
-            thread_id, role, contact_id, model, content, unread, token_count, status, error_message
+            thread_id, role, model, content, unread, token_count, status, error_message
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
         args.threadId,
         args.role,
-        args.contactId ?? null,
         args.model?.trim() || null,
         content,
         args.unread ? 1 : 0,
@@ -461,7 +253,7 @@ export class MailDBClient {
     const row = this.db
       .prepare(
         `
-          SELECT id, thread_id, role, contact_id, model, content, unread, token_count, status, error_message, created_at
+          SELECT id, thread_id, role, model, content, unread, token_count, status, error_message, created_at
           FROM mail_reply
           WHERE id = ?
         `
@@ -471,7 +263,6 @@ export class MailDBClient {
           id: number
           thread_id: number
           role: "user" | "assistant" | "system"
-          contact_id: number | null
           model: string | null
           content: string
           unread: number
@@ -490,7 +281,7 @@ export class MailDBClient {
     const rows = this.db
       .prepare(
         `
-          SELECT id, thread_id, role, contact_id, model, content, unread, token_count, status, error_message, created_at
+          SELECT id, thread_id, role, model, content, unread, token_count, status, error_message, created_at
           FROM mail_reply
           WHERE thread_id = ?
           ORDER BY id ASC
@@ -500,7 +291,6 @@ export class MailDBClient {
       id: number
       thread_id: number
       role: "user" | "assistant" | "system"
-      contact_id: number | null
       model: string | null
       content: string
       unread: number
@@ -677,7 +467,6 @@ export class MailDBClient {
             r.id,
             r.thread_id,
             r.role,
-            r.contact_id,
             r.model,
             r.content,
             r.unread,
@@ -685,15 +474,8 @@ export class MailDBClient {
             r.status,
             r.error_message,
             r.created_at,
-            c.slug AS contact_slug,
-            c.name AS contact_name,
-            c.color AS contact_color,
-            c.icon AS contact_icon,
-            c.icon_location AS contact_icon_location,
-            c.updated_at AS contact_updated_at,
             (SELECT COUNT(1) FROM mail_attachment a WHERE a.reply_id = r.id) AS attachment_count
           FROM mail_reply r
-          LEFT JOIN mail_contact c ON c.id = r.contact_id
           WHERE r.thread_id = ?
           ORDER BY r.id ASC
         `
@@ -702,7 +484,6 @@ export class MailDBClient {
       id: number
       thread_id: number
       role: "user" | "assistant" | "system"
-      contact_id: number | null
       model: string | null
       content: string
       unread: number
@@ -710,12 +491,6 @@ export class MailDBClient {
       status: "pending" | "streaming" | "completed" | "error"
       error_message: string | null
       created_at: string
-      contact_slug: string | null
-      contact_name: string | null
-      contact_color: string | null
-      contact_icon: string | null
-      contact_icon_location: string | null
-      contact_updated_at: string | null
       attachment_count: number
     }>
 
@@ -724,18 +499,6 @@ export class MailDBClient {
       replies: rows.map((row) => ({
         ...toReplyRecord(row),
         attachmentCount: row.attachment_count,
-        contact:
-          row.contact_id == null || !row.contact_slug || !row.contact_name || !row.contact_color || !row.contact_icon
-            ? null
-            : {
-                id: row.contact_id,
-                slug: row.contact_slug,
-                name: row.contact_name,
-                color: row.contact_color,
-                icon: row.contact_icon,
-                iconLocation: row.contact_icon_location,
-                updatedAt: row.contact_updated_at || row.created_at,
-              },
       })),
     }
   }
@@ -751,22 +514,14 @@ export class MailDBClient {
             r.id,
             r.thread_id,
             r.role,
-            r.contact_id,
             r.model,
             r.content,
             r.unread,
             r.token_count,
             r.status,
             r.error_message,
-            r.created_at,
-            c.slug AS contact_slug,
-            c.name AS contact_name,
-            c.color AS contact_color,
-            c.icon AS contact_icon,
-            c.icon_location AS contact_icon_location,
-            c.updated_at AS contact_updated_at
+            r.created_at
           FROM mail_reply r
-          LEFT JOIN mail_contact c ON c.id = r.contact_id
           WHERE r.id = ? AND r.thread_id = ?
         `
       )
@@ -775,7 +530,6 @@ export class MailDBClient {
           id: number
           thread_id: number
           role: "user" | "assistant" | "system"
-          contact_id: number | null
           model: string | null
           content: string
           unread: number
@@ -783,12 +537,6 @@ export class MailDBClient {
           status: "pending" | "streaming" | "completed" | "error"
           error_message: string | null
           created_at: string
-          contact_slug: string | null
-          contact_name: string | null
-          contact_color: string | null
-          contact_icon: string | null
-          contact_icon_location: string | null
-          contact_updated_at: string | null
         }
       | undefined
 
@@ -796,21 +544,7 @@ export class MailDBClient {
 
     return {
       thread,
-      reply: {
-        ...toReplyRecord(row),
-        contact:
-          row.contact_id == null || !row.contact_slug || !row.contact_name || !row.contact_color || !row.contact_icon
-            ? null
-            : {
-                id: row.contact_id,
-                slug: row.contact_slug,
-                name: row.contact_name,
-                color: row.contact_color,
-                icon: row.contact_icon,
-                iconLocation: row.contact_icon_location,
-                updatedAt: row.contact_updated_at || row.created_at,
-              },
-      },
+      reply: toReplyRecord(row),
       attachments: this.listAttachmentsByReplyId(row.id),
     }
   }
@@ -872,7 +606,6 @@ export class MailDBClient {
   }
 
   listThreads(args: {
-    contactSlug?: string
     fromReplyAt?: string
     toReplyAtExclusive?: string
     keyword?: string
@@ -892,18 +625,6 @@ export class MailDBClient {
       if (tokens.length === 0) return null
       return tokens.map((token) => `"${token.replace(/"/g, "\"\"")}"*`).join(" AND ")
     })()
-
-    if (args.contactSlug) {
-      where.push(
-        `EXISTS (
-          SELECT 1
-          FROM mail_reply rr
-          JOIN mail_contact cc ON cc.id = rr.contact_id
-          WHERE rr.thread_id = t.id AND cc.slug = ?
-        )`
-      )
-      params.push(args.contactSlug)
-    }
 
     if (args.fromReplyAt || args.toReplyAtExclusive) {
       const replyDateWhere = ["rr.thread_id = t.id"]
@@ -991,44 +712,15 @@ export class MailDBClient {
       last_reply_content: string | null
     }>
 
-    return rows.map((row) => {
-      const contacts = this.db
-        .prepare(
-          `
-            SELECT DISTINCT c.slug, c.name, c.color, c.icon, c.icon_location, c.updated_at
-            FROM mail_reply r
-            JOIN mail_contact c ON c.id = r.contact_id
-            WHERE r.thread_id = ?
-            ORDER BY c.name COLLATE NOCASE ASC
-          `
-        )
-        .all(row.id) as Array<{
-          slug: string
-          name: string
-          color: string
-          icon: string
-          icon_location: string | null
-          updated_at: string
-        }>
-
-      return {
-        threadUid: row.thread_uid,
-        title: row.title,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        unreadCount: row.unread_count,
-        lastReplyAt: row.last_reply_at,
-        lastReplySnippet: row.last_reply_content ? this.toSnippet(row.last_reply_content) : null,
-        contacts: contacts.map((contact) => ({
-          slug: contact.slug,
-          name: contact.name,
-          color: contact.color,
-          icon: contact.icon,
-          iconLocation: contact.icon_location,
-          updatedAt: contact.updated_at,
-        })),
-      }
-    })
+    return rows.map((row) => ({
+      threadUid: row.thread_uid,
+      title: row.title,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      unreadCount: row.unread_count,
+      lastReplyAt: row.last_reply_at,
+      lastReplySnippet: row.last_reply_content ? this.toSnippet(row.last_reply_content) : null,
+    }))
   }
 
   markThreadRead(threadId: number): { unreadCount: number } {
@@ -1093,25 +785,16 @@ export class MailDBClient {
 
   resolveModel(args: {
     requestedModel?: string | null
-    contactId?: number | null
     configDefaultModel?: string | null
   }): string {
     if (args.requestedModel?.trim()) return args.requestedModel.trim()
-
-    if (args.contactId) {
-      const row = this.db
-        .prepare("SELECT default_model FROM mail_contact WHERE id = ?")
-        .get(args.contactId) as { default_model: string | null } | undefined
-      if (row?.default_model?.trim()) return row.default_model.trim()
-    }
 
     if (args.configDefaultModel?.trim()) return args.configDefaultModel.trim()
     return "gpt-5.2-chat-latest"
   }
 
-  upsertThreadContactContext(args: {
+  upsertThreadContext(args: {
     threadId: number
-    contactId: number
     summaryText: string
     summaryTokenCount: number
     lastSummarizedReplyId: number | null
@@ -1119,11 +802,11 @@ export class MailDBClient {
     this.db
       .prepare(
         `
-          INSERT INTO mail_thread_contact_context (
-            thread_id, contact_id, summary_text, summary_token_count, last_summarized_reply_id
+          INSERT INTO mail_thread_context (
+            thread_id, summary_text, summary_token_count, last_summarized_reply_id
           )
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(thread_id, contact_id)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(thread_id)
           DO UPDATE SET
             summary_text = excluded.summary_text,
             summary_token_count = excluded.summary_token_count,
@@ -1133,14 +816,13 @@ export class MailDBClient {
       )
       .run(
         args.threadId,
-        args.contactId,
         args.summaryText,
         args.summaryTokenCount,
         args.lastSummarizedReplyId
       )
   }
 
-  getThreadContactContext(args: { threadId: number; contactId: number }): {
+  getThreadContext(args: { threadId: number }): {
     summaryText: string
     summaryTokenCount: number
     lastSummarizedReplyId: number | null
@@ -1149,11 +831,11 @@ export class MailDBClient {
       .prepare(
         `
           SELECT summary_text, summary_token_count, last_summarized_reply_id
-          FROM mail_thread_contact_context
-          WHERE thread_id = ? AND contact_id = ?
+          FROM mail_thread_context
+          WHERE thread_id = ?
         `
       )
-      .get(args.threadId, args.contactId) as
+      .get(args.threadId) as
       | {
           summary_text: string
           summary_token_count: number

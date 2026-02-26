@@ -19,3 +19,8 @@ npx @ootc/yah config set [key] -v [value]
 ```bash title='to set config value with editor'
 npx @ootc/yah config set [key] -e
 ```
+
+
+```bash title='change llm config reset'
+npx @ootc/yah config preset openai/zai/deepseek/moonshot
+```

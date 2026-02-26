@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import type { FormEvent } from 'react'
+import { useLanguageCtx } from '../ctx/LanguageCtx'
+import { LanguagePicker } from '../components/LanguagePicker'
 import styles from './AppLayout.module.css'
 
 type AppMode = 'search' | 'mail' | 'config'
@@ -14,6 +16,7 @@ function getModeFromPath(pathname: string): AppMode {
 export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { language: currentLanguage } = useLanguageCtx()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -78,7 +81,12 @@ export function AppLayout() {
       return
     }
 
-    navigate(`/search?query=${encodeURIComponent(query)}`)
+    const params = new URLSearchParams()
+    params.set('query', query)
+    if (currentLanguage !== 'auto') {
+      params.set('lang', currentLanguage)
+    }
+    navigate(`/search?${params.toString()}`)
   }
 
   const selectMode = (target: AppMode) => {
@@ -132,6 +140,8 @@ export function AppLayout() {
           ) : null}
 
           <div className={styles.spacer} />
+
+          {mode === 'search' ? <LanguagePicker className={styles.languageControl} /> : null}
 
           <div className={styles.menuWrap} ref={menuRef}>
             <button

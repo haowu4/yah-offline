@@ -6,26 +6,30 @@
 }
 
 .header {
-  padding: 12px;
+  padding: 14px;
   border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, #f6f6f3);
 }
 
 .title {
-  margin: 0 0 10px;
-  font-size: 26px;
+  margin: 0 0 12px;
+  font-size: 24px;
+  letter-spacing: -0.015em;
   line-height: 1.1;
+  font-family: "Space Grotesk", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
 }
 
 .searchRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 140px 140px 140px auto auto;
+  grid-template-columns: minmax(220px, 1fr) 140px 140px auto auto;
   gap: 8px;
 }
 
 .searchInput,
 .filterInput {
   width: 100%;
-  padding: 10px 12px;
+  min-height: 40px;
+  padding: 9px 12px;
   border: 2px solid var(--line-strong);
   border-radius: 2px;
   font-size: 14px;
@@ -40,62 +44,16 @@
   outline: 2px solid rgba(31, 77, 255, 0.16);
 }
 
-.contactPickerWrap {
-  position: relative;
-}
-
-.comboboxShell {
-  position: relative;
-}
-
-.comboboxOptions {
-  width: 100%;
-  max-height: 260px;
-  overflow: auto;
-  margin-top: 4px;
-  border: 1px solid var(--line-strong);
-  border-radius: 2px;
-  background: var(--surface);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
-  z-index: 10;
-}
-
-.comboboxOption {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  cursor: pointer;
-}
-
-.comboboxOption:hover,
-.comboboxOption[data-focus] {
-  background: #f2f7ff;
-}
-
-.comboboxOption[data-selected] {
-  background: #e9f1ff;
-}
-
-.contactOptionName {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.contactOptionSlug {
-  font-size: 11px;
-  color: #4a4f57;
-}
-
 .checkboxLabel {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border: 1px solid var(--line);
   border-radius: 2px;
+  min-height: 40px;
   padding: 8px 10px;
   font-size: 13px;
+  background: #fff;
 }
 
 .filterButton {
@@ -103,16 +61,21 @@
   border-radius: 2px;
   background: var(--line-strong);
   color: #fff;
-  padding: 8px 12px;
+  min-height: 40px;
+  padding: 8px 13px;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
 }
 
+.filterButton:hover {
+  background: #000;
+}
+
 .filterHint {
-  margin: 8px 0 0;
+  margin: 9px 0 0;
   font-size: 12px;
-  color: #4a4f57;
+  color: var(--muted);
 }
 
 .listWrap {
@@ -121,13 +84,14 @@
 
 .row {
   display: grid;
-  grid-template-columns: minmax(140px, 220px) 1fr auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 12px;
+  gap: 5px;
+  align-items: stretch;
+  padding: 11px 12px 10px;
   border-bottom: 1px solid var(--line);
   color: var(--text);
   text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: background-color 120ms ease, border-left-color 120ms ease;
 }
 
 .row:hover {
@@ -137,55 +101,29 @@
 
 .rowUnread {
   background: #f2f7ff;
+  border-left-color: #5b88ff;
 }
 
-.rowSender {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.senderDotGroup {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.senderDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  flex-shrink: 0;
-}
-
-.senderIcon {
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  object-fit: cover;
-  display: block;
-  flex-shrink: 0;
-}
-
-.rowMain {
+.rowTop {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   min-width: 0;
 }
 
 .rowSubject {
   font-weight: 700;
+  font-size: 14px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rowSnippet {
-  color: #4a4f57;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -196,7 +134,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #555;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -224,11 +162,6 @@
 @media (max-width: 1100px) {
   .searchRow {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .row {
-    grid-template-columns: 1fr;
-    gap: 6px;
   }
 
   .rowMeta {

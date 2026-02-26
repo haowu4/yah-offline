@@ -23,6 +23,7 @@ export function ArticlePage() {
 
   const slug = params.slug ?? ''
   const queryText = searchParams.get('query') ?? ''
+  const languageText = searchParams.get('lang')?.trim() || ''
 
   useEffect(() => {
     document.title = state.payload?.article.title ? `${state.payload.article.title} | yah` : 'Article | yah'
@@ -71,7 +72,7 @@ export function ArticlePage() {
 
   const { article, query, relatedIntents } = state.payload
   const backToResultsHref = query
-    ? `/search?query=${encodeURIComponent(queryText || query.value)}`
+    ? `/search?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`
     : '/search'
 
   return (

@@ -22,9 +22,8 @@ function deriveTitleFromReply(content: string): string {
 function formatLogContext(args: {
   threadId?: number | null
   replyId?: number | null
-  contactId?: number | null
 }): string {
-  return `thread_id=${args.threadId ?? "-"} reply_id=${args.replyId ?? "-"} contact_id=${args.contactId ?? "-"}`
+  return `thread_id=${args.threadId ?? "-"} reply_id=${args.replyId ?? "-"}`
 }
 
 async function withTimeout<T>(run: () => Promise<T>, timeoutMs: number): Promise<T> {
@@ -67,15 +66,14 @@ export function createMailReplyHandler(args: {
     }) => Promise<T>
   }
 
-  const callWithRetry = async <T>(callArgs: {
-    trigger: "reply-generation" | "summary-generation" | "image-generation"
-    logContext: {
-      threadId?: number | null
-      replyId?: number | null
-      contactId?: number | null
-    }
-    run: () => Promise<T>
-  }): Promise<T> => {
+    const callWithRetry = async <T>(callArgs: {
+      trigger: "reply-generation" | "summary-generation" | "image-generation"
+      logContext: {
+        threadId?: number | null
+        replyId?: number | null
+      }
+      run: () => Promise<T>
+    }): Promise<T> => {
     const runtimeConfig = args.runtimeConfigCache.get()
     let lastError: unknown = null
 
@@ -162,29 +160,20 @@ export function createMailReplyHandler(args: {
       throw new Error("User reply not found")
     }
 
-    const requestedContact = payload.requestedContactId
-      ? mailDB.getContactById(payload.requestedContactId)
-      : null
-
     const maxMessages = runtimeConfig.mailContextMaxMessages
     const summaryTriggerTokenCount = runtimeConfig.mailContextSummaryTriggerTokenCount
 
     const model = mailDB.resolveModel({
       requestedModel: payload.requestedModel,
-      contactId: requestedContact?.id ?? null,
       configDefaultModel: null,
     })
 
     const fullHistory = threadDetail.replies
     const contextWindow = fullHistory.slice(Math.max(fullHistory.length - maxMessages, 0))
 
-    const currentContext =
-      requestedContact == null
-        ? null
-        : mailDB.getThreadContactContext({
-            threadId: thread.id,
-            contactId: requestedContact.id,
-          })
+    const currentContext = mailDB.getThreadContext({
+      threadId: thread.id,
+    })
 
     const estimatedTokens = estimateTokenCount(
       fullHistory.map((item) => item.content).join("\n\n")
@@ -192,7 +181,6 @@ export function createMailReplyHandler(args: {
 
     let summary = currentContext?.summaryText || ""
     if (
-      requestedContact &&
       estimatedTokens >= summaryTriggerTokenCount &&
       (!currentContext || currentContext.summaryTokenCount < estimatedTokens)
     ) {
@@ -201,23 +189,19 @@ export function createMailReplyHandler(args: {
         logContext: {
           threadId: thread.id,
           replyId: userReply.id,
-          contactId: requestedContact.id,
         },
         run: () =>
           args.magicApi.summarize({
-            assistantDescription: requestedContact.instruction,
             messages: fullHistory.map((item) => ({
               role: item.role,
               content: item.content,
-              actorName: item.contact?.name ?? null,
             })),
           }),
       })
       summary = summaryResult.summary
 
-      mailDB.upsertThreadContactContext({
+      mailDB.upsertThreadContext({
         threadId: thread.id,
-        contactId: requestedContact.id,
         summaryText: summary,
         summaryTokenCount: estimatedTokens,
         lastSummarizedReplyId: fullHistory[fullHistory.length - 1]?.id ?? null,
@@ -229,17 +213,14 @@ export function createMailReplyHandler(args: {
       logContext: {
         threadId: thread.id,
         replyId: userReply.id,
-        contactId: requestedContact?.id ?? null,
       },
       run: () => {
         const runCreateReply = () =>
           args.magicApi.createReply({
-            assistantDescription: requestedContact?.instruction ?? "",
             summary,
             history: contextWindow.map((item) => ({
               role: item.role,
               content: item.content,
-              actorName: item.contact?.name ?? null,
             })),
             userInput: userReply.content,
             attachmentPolicy: {
@@ -289,7 +270,6 @@ export function createMailReplyHandler(args: {
         logContext: {
           threadId: thread.id,
           replyId: userReply.id,
-          contactId: requestedContact?.id ?? null,
         },
         run: () =>
           args.magicApi.createImage({
@@ -310,7 +290,6 @@ export function createMailReplyHandler(args: {
     const assistantReply = mailDB.createReply({
       threadId: thread.id,
       role: "assistant",
-      contactId: requestedContact?.id ?? null,
       model,
       content: replyResult.content,
       unread: true,
@@ -342,9 +321,9 @@ export function createMailReplyHandler(args: {
       })
     }
 
-    if (!thread.title.trim()) {
+    if (!thread.userSetTitle && !thread.title.trim()) {
       const generatedTitle = deriveTitleFromReply(userReply.content || assistantReply.content)
-      mailDB.updateThreadTitle(thread.id, generatedTitle)
+      mailDB.updateThreadTitle(thread.id, generatedTitle, { userSetTitle: false })
     }
 
     const threadAfter = mailDB.getThreadById(thread.id)

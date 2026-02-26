@@ -1,0 +1,127 @@
+.wrap {
+  position: relative;
+}
+
+.button {
+  height: 42px;
+  min-width: 154px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #d6d6d0;
+  border-radius: 2px;
+  padding: 0 12px;
+  background: #fff;
+  color: #202020;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.button:hover {
+  border-color: #bcbcbc;
+  background: #fafafa;
+}
+
+.button:focus-visible {
+  outline: 2px solid rgba(31, 77, 255, 0.16);
+  outline-offset: 0;
+}
+
+.buttonIcon {
+  color: #666;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.label {
+  font-size: 10px;
+  letter-spacing: 0.28px;
+  text-transform: uppercase;
+  color: #737373;
+}
+
+.value {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chevron {
+  margin-left: auto;
+  color: #666;
+  font-size: 11px;
+}
+
+.options {
+  min-width: 240px;
+  border: 1px solid #d6d6d0;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  padding: 0;
+  z-index: 40;
+}
+
+.option {
+  list-style: none;
+}
+
+.optionInner {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 11px;
+}
+
+.optionFocus {
+  background: #f6f7f8;
+}
+
+.option + .option {
+  border-top: 1px solid var(--line);
+}
+
+.optionLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: #202020;
+}
+
+.optionMeta {
+  font-size: 11px;
+  color: #6d6d6d;
+}
+
+.check {
+  color: #ea8a00;
+  opacity: 0;
+  font-size: 13px;
+}
+
+.checkVisible {
+  opacity: 1;
+}
+
+@media (max-width: 720px) {
+  .button {
+    min-width: 44px;
+    width: 44px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .label,
+  .value,
+  .chevron {
+    display: none;
+  }
+
+  .buttonIcon {
+    font-size: 16px;
+  }
+}

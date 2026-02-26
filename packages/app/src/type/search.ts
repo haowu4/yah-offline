@@ -1,6 +1,8 @@
 export type QueryRecord = {
     id: number
     value: string
+    language: string
+    originalValue: string | null
     createdAt: string
 }
 
@@ -79,3 +81,15 @@ export type SearchStreamEvent =
     | SearchStreamArticleCreatedEvent
     | SearchStreamCompletedEvent
     | SearchStreamErrorEvent
+
+export type SearchRecentQueryItem = {
+    value: string
+    language: string
+    lastSearchedAt: string
+}
+
+export type SearchSuggestionsPayload = {
+    examples: string[]
+    recent: SearchRecentQueryItem[]
+    isFirstTimeUser: boolean
+}

@@ -5,6 +5,7 @@ import { createSearchRouter } from "./routes/search.js"
 import { createMailRouter } from "./routes/mail.js"
 import { EventDispatcher } from "./llm/eventDispatcher.js"
 import { startLLMWorker } from "./llm/worker.js"
+import { createMagicApi } from "../magic/factory.js"
 import { createRequestLogger } from "./middleware/requestLogger.js"
 import { logDebugJson, logLine } from "../logging/index.js"
 
@@ -13,12 +14,13 @@ export function createServer(appCtx: AppCtx) {
     app.use(express.json())
     app.use(createRequestLogger({ debug: appCtx.config.app.debug }))
     const eventDispatcher = new EventDispatcher(appCtx)
+    const magicApi = createMagicApi({ appCtx })
 
     if (appCtx.config.server.enableConfigRoutes) {
         app.use("/api/config", createConfigRouter(appCtx))
     }
 
-    app.use("/api", createSearchRouter(appCtx, eventDispatcher))
+    app.use("/api", createSearchRouter(appCtx, eventDispatcher, magicApi))
     app.use("/api", createMailRouter(appCtx, eventDispatcher))
     app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         const message = err instanceof Error ? err.message : "Internal server error"

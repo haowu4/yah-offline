@@ -28,6 +28,11 @@ export type SearchIntent = {
 export type SearchState = {
   queryId: number | null
   query: string
+  requestedQuery: string
+  correctionApplied: boolean
+  correctedQuery: string | null
+  language: string
+  spellCorrectionMode: 'off' | 'auto' | 'force'
   queryIntents: SearchIntent[]
   isLoading: boolean
   error: string | null
@@ -35,10 +40,15 @@ export type SearchState = {
 }
 
 type SearchContextValue = SearchState & {
-  startSearch: (query: string) => Promise<void>
+  startSearch: (args: {
+    query: string
+    language?: string
+    spellCorrectionMode?: 'off' | 'auto' | 'force'
+  }) => Promise<void>
   hydrateFromResult: (args: {
     queryId: number
     query: string
+    language?: string
     intents: Array<{
       id: number
       intent: string
@@ -49,6 +59,18 @@ type SearchContextValue = SearchState & {
 }
 
 const SearchCtx = createContext<SearchContextValue | null>(null)
+
+function resolveSearchLanguage(language: string | undefined): string {
+  const raw = language?.trim() || 'auto'
+  if (raw && raw.toLowerCase() !== 'auto') return raw
+
+  const browserLanguage =
+    typeof navigator !== 'undefined' && typeof navigator.language === 'string'
+      ? navigator.language.trim()
+      : ''
+  if (browserLanguage) return browserLanguage
+  return 'en'
+}
 
 function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchState {
   if (event.type === 'intent.created') {
@@ -126,6 +148,11 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SearchState>({
     queryId: null,
     query: '',
+    requestedQuery: '',
+    correctionApplied: false,
+    correctedQuery: null,
+    language: 'auto',
+    spellCorrectionMode: 'auto',
     queryIntents: [],
     isLoading: false,
     error: null,
@@ -141,6 +168,11 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     setState({
       queryId: null,
       query: '',
+      requestedQuery: '',
+      correctionApplied: false,
+      correctedQuery: null,
+      language: 'auto',
+      spellCorrectionMode: 'auto',
       queryIntents: [],
       isLoading: false,
       error: null,
@@ -152,6 +184,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     (args: {
       queryId: number
       query: string
+      language?: string
       intents: Array<{
         id: number
         intent: string
@@ -161,6 +194,11 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       setState({
         queryId: args.queryId,
         query: args.query,
+        requestedQuery: args.query,
+        correctionApplied: false,
+        correctedQuery: null,
+        language: args.language || 'auto',
+        spellCorrectionMode: 'auto',
         queryIntents: args.intents.map((intent) => ({
           id: intent.id,
           intent: intent.intent,
@@ -175,12 +213,20 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     []
   )
 
-  const startSearch = useCallback(async (query: string) => {
+  const startSearch = useCallback(async (args: {
+    query: string
+    language?: string
+    spellCorrectionMode?: 'off' | 'auto' | 'force'
+  }) => {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
 
-    const queryValue = query.trim()
+    const queryValue = args.query.trim()
     if (!queryValue) return
+
+    const requestedLanguage = args.language?.trim() || 'auto'
+    const effectiveLanguage = resolveSearchLanguage(requestedLanguage)
+    const spellCorrectionMode = args.spellCorrectionMode || 'auto'
 
     teardownRef.current?.()
     teardownRef.current = null
@@ -188,24 +234,39 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     setState({
       queryId: null,
       query: queryValue,
+      requestedQuery: queryValue,
+      correctionApplied: false,
+      correctedQuery: null,
+      language: requestedLanguage,
+      spellCorrectionMode,
       queryIntents: [],
       isLoading: true,
       error: null,
       isReplayed: false,
     })
 
-    const { queryId } = await createQuery(queryValue)
+    const created = await createQuery({
+      query: queryValue,
+      language: effectiveLanguage,
+      spellCorrectionMode,
+    })
     if (requestIdRef.current !== requestId) {
       return
     }
 
     setState((prev) => ({
       ...prev,
-      queryId,
+      queryId: created.queryId,
+      query: created.query,
+      requestedQuery: created.originalQuery,
+      correctionApplied: created.correctionApplied,
+      correctedQuery: created.correctedQuery,
+      language: created.language,
+      spellCorrectionMode: created.spellCorrectionMode,
     }))
 
     teardownRef.current = streamQuery({
-      queryId,
+      queryId: created.queryId,
       onEvent: (event) => {
         if (requestIdRef.current !== requestId) return
         setState((prev) => applyStreamEvent(prev, event))

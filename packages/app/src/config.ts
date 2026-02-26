@@ -97,12 +97,6 @@ export async function getAppConfig(): Promise<AppConfig> {
     let apiKey = ""
     if (apiKeySource === "env") {
         apiKey = process.env.YAH_API_KEY || ""
-    } else {
-        // Keychain integration is not wired yet; fail explicitly instead of silently
-        // misconfiguring the app.
-        throw new Error(
-            "YAH_API_KEY_SOURCE=keychain is not implemented yet. Use YAH_API_KEY_SOURCE=env."
-        )
     }
 
     return {

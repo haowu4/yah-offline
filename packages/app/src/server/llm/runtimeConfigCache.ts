@@ -9,10 +9,6 @@ function parsePositiveIntOrDefault(value: string | null, defaultValue: number): 
 export type LLMRuntimeConfig = {
   llmRetryMaxAttempts: number
   llmRequestTimeoutMs: number
-  mailAttachmentsMaxCount: number
-  mailAttachmentsMaxTextChars: number
-  mailContextMaxMessages: number
-  mailContextSummaryTriggerTokenCount: number
 }
 
 export class LLMRuntimeConfigCache {
@@ -41,22 +37,6 @@ export class LLMRuntimeConfigCache {
       llmRequestTimeoutMs: parsePositiveIntOrDefault(
         configDB.getValue("llm.retry.timeout_ms"),
         20000
-      ),
-      mailAttachmentsMaxCount: parsePositiveIntOrDefault(
-        configDB.getValue("mail.attachments.max_count"),
-        3
-      ),
-      mailAttachmentsMaxTextChars: parsePositiveIntOrDefault(
-        configDB.getValue("mail.attachments.max_text_chars"),
-        20000
-      ),
-      mailContextMaxMessages: parsePositiveIntOrDefault(
-        configDB.getValue("mail.context.max_messages"),
-        20
-      ),
-      mailContextSummaryTriggerTokenCount: parsePositiveIntOrDefault(
-        configDB.getValue("mail.context.summary_trigger_token_count"),
-        5000
       ),
     }
 

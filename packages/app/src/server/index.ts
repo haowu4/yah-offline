@@ -2,7 +2,6 @@ import express from "express"
 import { AppCtx } from "../appCtx.js"
 import { createConfigRouter } from "./routes/config.js"
 import { createSearchRouter } from "./routes/search.js"
-import { createMailRouter } from "./routes/mail.js"
 import { EventDispatcher } from "./llm/eventDispatcher.js"
 import { startLLMWorker } from "./llm/worker.js"
 import { createMagicApi } from "../magic/factory.js"
@@ -21,7 +20,6 @@ export function createServer(appCtx: AppCtx) {
     }
 
     app.use("/api", createSearchRouter(appCtx, eventDispatcher, magicApi))
-    app.use("/api", createMailRouter(appCtx, eventDispatcher))
     app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         const message = err instanceof Error ? err.message : "Internal server error"
         logLine("error", `HTTP ERROR ${message}`)

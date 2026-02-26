@@ -289,7 +289,7 @@ export function ConfigPage() {
             <input
               value={newKey}
               onChange={(event) => setNewKey(event.target.value)}
-              placeholder="mail.default_model"
+              placeholder="search.content_generation.model"
               className={styles.input}
             />
           </label>

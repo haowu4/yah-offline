@@ -1,11 +1,5 @@
 export type MagicQuality = "low" | "normal" | "high"
 
-export type MagicChatMessage = {
-  role: "user" | "assistant" | "system"
-  content: string
-  actorName?: string | null
-}
-
 export type MagicSearchIntentResult = {
   intents: string[]
 }
@@ -16,25 +10,6 @@ export type MagicSearchArticleResult = {
     slug: string
     content: string
   }
-}
-
-export type MagicMailReplyAttachment =
-  | {
-      kind: "text"
-      filename: string
-      quality: MagicQuality
-      content: string
-    }
-  | {
-      kind: "image"
-      filename: string
-      quality: MagicQuality
-      description: string
-    }
-
-export type MagicMailReplyResult = {
-  content: string
-  attachments: MagicMailReplyAttachment[]
 }
 
 export type MagicImageResult = {
@@ -60,20 +35,6 @@ export abstract class AbstractMagicApi {
     intent: string
     language?: string
   }): Promise<MagicSearchArticleResult>
-
-  abstract summarize(args: {
-    messages: MagicChatMessage[]
-  }): Promise<{ summary: string }>
-
-  abstract createReply(args: {
-    summary: string
-    history: MagicChatMessage[]
-    userInput: string
-    attachmentPolicy: {
-      maxCount: number
-      maxTextChars: number
-    }
-  }): Promise<MagicMailReplyResult>
 
   abstract createImage(args: {
     description: string

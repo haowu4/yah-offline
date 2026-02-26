@@ -15,7 +15,6 @@ function formatPathWithQuery(req: Request): string {
 
 function isSSERequest(req: Request): boolean {
   const url = formatPathWithQuery(req)
-  if (/\/mail\/thread\/[^/]+\/stream(?:\?|$)/.test(url)) return true
   if (/\/query\/\d+\/stream(?:\?|$)/.test(url)) return true
   return false
 }

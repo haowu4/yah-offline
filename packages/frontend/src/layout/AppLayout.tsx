@@ -5,14 +5,6 @@ import { useLanguageCtx } from '../ctx/LanguageCtx'
 import { LanguagePicker } from '../components/LanguagePicker'
 import styles from './AppLayout.module.css'
 
-type AppMode = 'search' | 'mail' | 'config'
-
-function getModeFromPath(pathname: string): AppMode {
-  if (pathname.startsWith('/mail')) return 'mail'
-  if (pathname.startsWith('/config')) return 'config'
-  return 'search'
-}
-
 export function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -20,25 +12,7 @@ export function AppLayout() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
-  const mode = getModeFromPath(location.pathname)
-  const modeLabel = mode === 'search' ? 'Search' : mode === 'mail' ? 'Mail' : 'Config'
-  const modeOptions: Array<{
-    id: AppMode
-    label: string
-  }> = [
-    {
-      id: 'search',
-      label: 'Search',
-    },
-    {
-      id: 'mail',
-      label: 'Mail',
-    },
-    {
-      id: 'config',
-      label: 'Config',
-    },
-  ]
+  const isConfigPage = location.pathname.startsWith('/config')
 
   const currentSearchInput = (() => {
     if (location.pathname === '/search') {
@@ -54,7 +28,7 @@ export function AppLayout() {
     return ''
   })()
   const shouldShowNavSearch =
-    mode !== 'config' && !(location.pathname === '/search' && currentSearchInput.trim() === '')
+    !isConfigPage && !(location.pathname === '/search' && currentSearchInput.trim() === '')
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -89,31 +63,13 @@ export function AppLayout() {
     navigate(`/search?${params.toString()}`)
   }
 
-  const selectMode = (target: AppMode) => {
-    if (target === mode) {
-      setIsMenuOpen(false)
-      return
-    }
-
+  const goToConfig = () => {
     setIsMenuOpen(false)
-    if (target === 'search') {
-      navigate('/search')
-      return
-    }
-
-    if (target === 'config') {
-      navigate('/config')
-      return
-    }
-
-    navigate('/mail')
+    navigate('/config')
   }
 
-  const brandTo = mode === 'mail' ? '/mail' : mode === 'config' ? '/config' : '/search'
-  const mainClassName =
-    mode === 'mail'
-      ? `${styles.main} ${styles.mainMail}`
-      : `${styles.main} ${styles.mainScroll}`
+  const brandTo = '/search'
+  const mainClassName = `${styles.main} ${styles.mainScroll}`
 
   return (
     <div className={styles.appShell}>
@@ -141,7 +97,7 @@ export function AppLayout() {
 
           <div className={styles.spacer} />
 
-          {mode === 'search' ? <LanguagePicker className={styles.languageControl} /> : null}
+          <LanguagePicker className={styles.languageControl} />
 
           <div className={styles.menuWrap} ref={menuRef}>
             <button
@@ -149,38 +105,42 @@ export function AppLayout() {
               onClick={() => setIsMenuOpen((current) => !current)}
               aria-haspopup="menu"
               aria-expanded={isMenuOpen}
+              aria-label="Open menu"
               className={`${styles.menuButton} ${isMenuOpen ? styles.menuButtonOpen : ''}`}
             >
-              <span className={styles.menuButtonText}>
-                <small className={styles.menuButtonCaption}>App</small>
-                <strong className={styles.menuButtonValue}>{modeLabel}</strong>
+              <span className={styles.menuIcon} aria-hidden="true">
+                ☰
               </span>
               <span className={styles.menuChevron}>{isMenuOpen ? '▴' : '▾'}</span>
             </button>
 
             {isMenuOpen ? (
-              <div className={styles.menu} role="menu" aria-label="App selection">
-                <p className={styles.menuTitle}>App</p>
-                {modeOptions.map((option) => {
-                  const isActive = mode === option.id
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => selectMode(option.id)}
-                      className={`${styles.menuItem} ${isActive ? styles.menuItemActive : ''}`}
-                      role="menuitemradio"
-                      aria-checked={isActive}
-                    >
-                      <span className={styles.menuItemText}>
-                        <span className={styles.menuItemLabel}>{option.label}</span>
-                      </span>
-                      <span className={styles.menuItemMeta}>
-                        <span className={`${styles.menuCheck} ${isActive ? styles.menuCheckVisible : ''}`}>✓</span>
-                      </span>
-                    </button>
-                  )
-                })}
+              <div className={styles.menu} role="menu" aria-label="Main menu">
+                <p className={styles.menuTitle}>Menu</p>
+                <button
+                  type="button"
+                  onClick={goToConfig}
+                  className={`${styles.menuItem} ${isConfigPage ? styles.menuItemActive : ''}`}
+                  role="menuitem"
+                >
+                  <span className={styles.menuItemText}>
+                    <span className={styles.menuItemLabel}>Config</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.menuItem}
+                  role="menuitem"
+                  disabled
+                  aria-disabled="true"
+                >
+                  <span className={styles.menuItemText}>
+                    <span className={styles.menuItemLabel}>Guides</span>
+                  </span>
+                  <span className={styles.menuItemMeta}>
+                    <span className={styles.menuMetaBadge}>Soon</span>
+                  </span>
+                </button>
               </div>
             ) : null}
           </div>

@@ -20,9 +20,7 @@ export type AppConfig = {
     }
 
     api: {
-        apiKeySource: 'env' | 'keychain'  // env: YAH_API_KEY_SOURCE default=env
         magicProvider: 'openai' | 'dev' // env: YAH_MAGIC_PROVIDER default=openai
-        apiKey: string // YAH_API_KEY if apiKeySource='env' otherwise load from keytar
     }
 
 }
@@ -62,14 +60,6 @@ function parseSchemaConflictMode(
     )
 }
 
-function parseApiKeySource(value: string | undefined): "env" | "keychain" {
-    if (value == null || value.trim() === "") return "env"
-    if (value === "env" || value === "keychain") return value
-    throw new Error(
-        `Invalid YAH_API_KEY_SOURCE "${value}". Expected "env" or "keychain".`
-    )
-}
-
 function parseMagicProvider(value: string | undefined): "openai" | "dev" {
     if (value == null || value.trim() === "") return "openai"
     if (value === "openai" || value === "dev") return value
@@ -90,14 +80,8 @@ export async function getAppConfig(): Promise<AppConfig> {
     )
     const host = process.env.YAH_HOST || "127.0.0.1"
     const port = parsePort(process.env.YAH_PORT, 11111)
-    const apiKeySource = parseApiKeySource(process.env.YAH_API_KEY_SOURCE)
     const magicProvider = parseMagicProvider(process.env.YAH_MAGIC_PROVIDER)
     const debug = parseBoolean(process.env.YAH_DEBUG, false)
-
-    let apiKey = ""
-    if (apiKeySource === "env") {
-        apiKey = process.env.YAH_API_KEY || ""
-    }
 
     return {
         app: {
@@ -114,9 +98,7 @@ export async function getAppConfig(): Promise<AppConfig> {
             port,
         },
         api: {
-            apiKeySource,
             magicProvider,
-            apiKey,
         },
 
     }

@@ -49,17 +49,20 @@ async function main() {
     const db = await openInMemoryDB()
 
     try {
-        for (const migration of migrations) {
-            db.exec(migration.sql)
-        }
+      for (const migration of migrations) {
+          db.exec(migration.sql)
+      }
 
-        const tables = db.getTableNames()
-        if (!tables.includes("mail_search_fts")) {
-            throw new Error("Expected mail_search_fts table to exist after migrations")
+      const tables = db.getTableNames()
+      const requiredTables = ["config_value", "query", "query_intent", "article", "llm_job", "llm_event", "query_history", "search_spell_cache"]
+      for (const table of requiredTables) {
+        if (!tables.includes(table)) {
+          throw new Error(`Expected ${table} table to exist after migrations`)
         }
+      }
 
-        console.log(`Migration smoke test passed (${db.kind}).`)
-        console.log("Tables:", tables.join(", "))
+      console.log(`Migration smoke test passed (${db.kind}).`)
+      console.log("Tables:", tables.join(", "))
     } finally {
         db.close()
     }

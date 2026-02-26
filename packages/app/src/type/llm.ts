@@ -1,20 +1,12 @@
-import { MailStreamEvent } from "./mail.js"
 import { SearchStreamEvent } from "./search.js"
 
-export type LLMJobKind = "mail.reply" | "search.generate"
-
-export type MailReplyJobPayload = {
-  threadId: number
-  userReplyId: number
-  requestedModel: string | null
-}
+export type LLMJobKind = "search.generate"
 
 export type SearchGenerateJobPayload = {
   queryId: number
 }
 
 export type LLMJobPayloadByKind = {
-  "mail.reply": MailReplyJobPayload
   "search.generate": SearchGenerateJobPayload
 }
 
@@ -37,10 +29,9 @@ export type LLMJobRecord = {
   updatedAt: string
 }
 
-export type LLMEventTopic = "mail" | "search.query"
+export type LLMEventTopic = "search.query"
 
 export type LLMEventPayloadByTopic = {
-  mail: MailStreamEvent
   "search.query": SearchStreamEvent
 }
 

@@ -4,7 +4,6 @@ import { BrowserRouter } from 'react-router'
 import './index.css'
 import styles from './main.module.css'
 import { SearchProvider } from './ctx/SearchCtx.tsx'
-import { MailProvider } from './ctx/MailCtx.tsx'
 import { LanguageProvider } from './ctx/LanguageCtx.tsx'
 import { AppRoutes } from './routes.tsx'
 
@@ -14,9 +13,7 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <LanguageProvider>
           <SearchProvider>
-            <MailProvider>
-              <AppRoutes />
-            </MailProvider>
+            <AppRoutes />
           </SearchProvider>
         </LanguageProvider>
       </BrowserRouter>

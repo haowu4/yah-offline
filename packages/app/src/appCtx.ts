@@ -5,7 +5,6 @@ import { AppConfig } from "./config.js"
 import { addDefaultConfigs, detectMigrationConflicts, ensureMigrationsTable, runMigrations } from "./db/setup.js"
 import { ConfigClient } from "./db/clients/config.js"
 import { SearchDBClient } from "./db/clients/search.js"
-import { MailDBClient } from "./db/clients/mail.js"
 import { LLMDBClient } from "./db/clients/llm.js"
 
 export class AppCtx {
@@ -62,7 +61,6 @@ export class AppCtx {
         return {
             config: () => new ConfigClient(db),
             search: () => new SearchDBClient(db),
-            mail: () => new MailDBClient(db),
             llm: () => new LLMDBClient(db),
         }
     }

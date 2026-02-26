@@ -119,21 +119,17 @@
 }
 
 .menuButton {
-  min-width: 144px;
+  width: 42px;
   height: 42px;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid #d6d6d0;
   border-radius: 2px;
-  padding: 8px 12px;
+  padding: 0;
   background: #fff;
   color: #202020;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.1px;
-  text-transform: none;
   cursor: pointer;
   transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
 }
@@ -168,6 +164,11 @@
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.1px;
+}
+
+.menuIcon {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .menuChevron {
@@ -280,17 +281,6 @@
   min-height: 100%;
 }
 
-.mainMail {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.mainMail > * {
-  flex: 1;
-  min-height: 0;
-}
-
 @media (max-width: 720px) {
   .inner {
     padding: 10px 0;
@@ -302,7 +292,7 @@
   }
 
   .menuButton {
-    min-width: 92px;
+    width: 42px;
   }
 
   .searchSubmit {

@@ -44,6 +44,7 @@ type SearchContextValue = SearchState & {
     query: string
     language?: string
     spellCorrectionMode?: 'off' | 'auto' | 'force'
+    forceRegenerate?: boolean
   }) => Promise<void>
   hydrateFromResult: (args: {
     queryId: number
@@ -247,6 +248,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     query: string
     language?: string
     spellCorrectionMode?: 'off' | 'auto' | 'force'
+    forceRegenerate?: boolean
   }) => {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
@@ -279,6 +281,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       query: queryValue,
       language: effectiveLanguage,
       spellCorrectionMode,
+      forceRegenerate: args.forceRegenerate === true,
     })
     if (requestIdRef.current !== requestId) {
       return

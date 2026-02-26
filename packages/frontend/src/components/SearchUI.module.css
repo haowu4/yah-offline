@@ -41,6 +41,22 @@
   letter-spacing: 0.1px;
 }
 
+.noResultsRow {
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.noResultsText {
+  font-size: 13px;
+  color: #555;
+  letter-spacing: 0.1px;
+}
+
 .menuWrap {
   position: relative;
   display: inline-flex;

@@ -38,6 +38,8 @@ const EN: Record<string, string> = {
   'search.intent.noAnswer': 'No answer yet.',
   'search.action.rerunIntents': 'Rerun intents + articles',
   'search.action.rerunIntents.running': 'Rerunning intents + articles...',
+  'search.action.rerunQuery': 'Rerun query',
+  'search.action.rerunQuery.running': 'Rerunning query...',
   'search.action.rerunArticles': 'Regenerate articles',
   'search.action.rerunArticles.running': 'Regenerating articles...',
   'search.action.copyLink': 'Copy link',

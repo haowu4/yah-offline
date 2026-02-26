@@ -22,11 +22,13 @@ type SearchUIProps = {
   examples: string[]
   recent: ApiSearchSuggestionItem[]
   isFirstTimeUser: boolean
+  isRerunningQuery: boolean
   isRerunningIntents: boolean
   isRerunningArticles: boolean
   rerunningIntentId: number | null
   onSearch: (query: string) => Promise<void>
   onSearchOriginal: () => Promise<void>
+  onRerunQuery: () => Promise<void>
   onRerunIntents: () => Promise<void>
   onRerunArticle: (intentId: number) => Promise<void>
 }
@@ -178,7 +180,36 @@ export function SearchUI(props: SearchUIProps) {
         </div>
       ) : null}
 
-      {props.query && !hasResults && !props.isLoading ? <p>{t('search.noResultsYet')}</p> : null}
+      {props.query && !hasResults && !props.isLoading ? (
+        <div className={styles.noResultsRow}>
+          <span className={styles.noResultsText}>{t('search.noResultsYet')}</span>
+          <Menu as="div" className={styles.menuWrap}>
+            <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
+              <FiMoreHorizontal className={styles.menuTriggerIcon} aria-hidden />
+            </MenuButton>
+            <MenuItems className={styles.menuList}>
+              <MenuItem disabled={props.isRerunningQuery || props.isLoading}>
+                {({ close, disabled }) => (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    disabled={disabled}
+                    onClick={async () => {
+                      close()
+                      await props.onRerunQuery()
+                    }}
+                  >
+                    <span className={styles.menuItemContent}>
+                      <FiRefreshCw className={styles.menuItemIcon} aria-hidden />
+                      <span>{props.isRerunningQuery ? t('search.action.rerunQuery.running') : t('search.action.rerunQuery')}</span>
+                    </span>
+                  </button>
+                )}
+              </MenuItem>
+            </MenuItems>
+          </Menu>
+        </div>
+      ) : null}
 
       {hasResults ? (
         <div className={styles.grid}>

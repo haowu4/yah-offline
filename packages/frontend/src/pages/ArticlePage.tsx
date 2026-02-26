@@ -93,29 +93,40 @@ export function ArticlePage() {
   const regenerateArticle = async () => {
     if (!query || !state.payload?.intent || isRegenerating) return
     setIsRegenerating(true)
+    const currentIntentId = state.payload.intent.id
 
     try {
-      await rerunArticleForIntent(query.id, state.payload.intent.id)
+      await rerunArticleForIntent(query.id, currentIntentId)
 
       let settled = false
       const unsubscribe = streamQuery({
         queryId: query.id,
-        onEvent: (event) => {
+        onEvent: async (event) => {
           if (settled) return
-          if (event.type === 'article.created' && event.intentId === state.payload?.intent?.id) {
+          if (event.type === 'article.created' && event.intentId === currentIntentId) {
             settled = true
             unsubscribe()
             const nextSlug = event.article.slug
             const nextHref = `/content/${encodeURIComponent(nextSlug)}?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`
             navigate(nextHref, { replace: true })
-            setIsRegenerating(false)
+            try {
+              const refreshed = await getArticleBySlug(nextSlug)
+              setState({ isLoading: false, error: null, payload: refreshed })
+            } finally {
+              setIsRegenerating(false)
+            }
             return
           }
 
           if (event.type === 'query.error' || event.type === 'query.completed') {
             settled = true
             unsubscribe()
-            setIsRegenerating(false)
+            try {
+              const refreshed = await getArticleBySlug(slug)
+              setState({ isLoading: false, error: null, payload: refreshed })
+            } finally {
+              setIsRegenerating(false)
+            }
           }
         },
         onError: () => {

@@ -26,7 +26,7 @@ export function SearchPage() {
   const [examples, setExamples] = useState<string[]>([])
   const [recent, setRecent] = useState<ApiSearchSuggestionItem[]>([])
   const [isFirstTimeUser, setIsFirstTimeUser] = useState(true)
-  const [rerunMode, setRerunMode] = useState<'intents' | 'articles' | null>(null)
+  const [rerunMode, setRerunMode] = useState<'query' | 'intents' | 'articles' | null>(null)
   const [rerunIntentId, setRerunIntentId] = useState<number | null>(null)
 
   useEffect(() => {
@@ -108,7 +108,7 @@ export function SearchPage() {
       search.requestedQuery === queryFromUrl &&
       search.language === languageFromUrl &&
       search.spellCorrectionMode === spellModeFromUrl &&
-      (search.isLoading || search.queryIntents.length > 0)
+      (search.isLoading || search.queryId !== null || search.queryIntents.length > 0)
     ) {
       return
     }
@@ -124,6 +124,7 @@ export function SearchPage() {
     search.error,
     search.isLoading,
     search.language,
+    search.queryId,
     search.queryIntents.length,
     search.requestedQuery,
     search.spellCorrectionMode,
@@ -184,6 +185,22 @@ export function SearchPage() {
     }
   }
 
+  const handleRerunQuery = async () => {
+    const value = (search.requestedQuery || queryFromUrl).trim()
+    if (!value) return
+    setRerunMode('query')
+    try {
+      await search.startSearch({
+        query: value,
+        language: languageFromUrl,
+        spellCorrectionMode: spellModeFromUrl,
+        forceRegenerate: true,
+      })
+    } finally {
+      setRerunMode(null)
+    }
+  }
+
   const handleRerunArticle = async (intentId: number) => {
     setRerunMode('articles')
     setRerunIntentId(intentId)
@@ -211,11 +228,13 @@ export function SearchPage() {
         examples={examples}
         recent={recent}
         isFirstTimeUser={isFirstTimeUser}
+        isRerunningQuery={rerunMode === 'query'}
         isRerunningIntents={rerunMode === 'intents'}
         isRerunningArticles={rerunMode === 'articles'}
         rerunningIntentId={rerunIntentId}
         onSearch={handleSearch}
         onSearchOriginal={handleSearchOriginal}
+        onRerunQuery={handleRerunQuery}
         onRerunIntents={handleRerunIntents}
         onRerunArticle={handleRerunArticle}
       />

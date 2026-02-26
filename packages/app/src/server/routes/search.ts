@@ -286,6 +286,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       "auto"
     )
     const spellCorrectionMode = parseSpellCorrectionMode(req.body?.spellCorrectionMode, spellModeDefault)
+    const forceRegenerate = req.body?.forceRegenerate === true
 
     try {
       let correctedCandidate = ""
@@ -364,6 +365,27 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
           queryId: query.id,
           dedupeWindowSeconds: recentDedupeWindowSeconds,
         })
+      }
+
+      if (forceRegenerate) {
+        const entityId = `query:${query.id}`
+        if (!llmDB.hasActiveJob("search.generate", entityId)) {
+          llmDB.deleteEvents({
+            topic: "search.query",
+            entityId,
+          })
+
+          llmDB.enqueueJob({
+            kind: "search.generate",
+            entityId,
+            priority: 10,
+            payload: {
+              queryId: query.id,
+              regenerateIntents: true,
+              regenerateArticles: true,
+            },
+          })
+        }
       }
 
       res.json({
@@ -630,6 +652,34 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     }
 
     if (hasGeneratedContent && !hasActiveJob && replayEvents.length === 0) {
+      const snapshot = searchDB.getQueryResult(queryId)
+      if (snapshot) {
+        for (const intent of snapshot.intents) {
+          sendEvent(0, {
+            type: "intent.created",
+            queryId,
+            intent: {
+              id: intent.id,
+              value: intent.intent,
+            },
+          })
+
+          for (const article of intent.articles) {
+            sendEvent(0, {
+              type: "article.created",
+              queryId,
+              intentId: intent.id,
+              article: {
+                id: article.id,
+                title: article.title,
+                slug: article.slug,
+                snippet: article.snippet,
+              },
+            })
+          }
+        }
+      }
+
       sendEvent(0, {
         type: "query.completed",
         queryId,

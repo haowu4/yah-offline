@@ -122,6 +122,7 @@ export async function createQuery(args: {
   query: string
   language: string
   spellCorrectionMode?: 'off' | 'auto' | 'force'
+  forceRegenerate?: boolean
 }): Promise<CreateQueryResponse> {
   return apiFetch<CreateQueryResponse>('/query', {
     method: 'POST',
@@ -129,6 +130,7 @@ export async function createQuery(args: {
       query: args.query,
       language: args.language,
       spellCorrectionMode: args.spellCorrectionMode,
+      forceRegenerate: args.forceRegenerate === true,
     }),
   })
 }

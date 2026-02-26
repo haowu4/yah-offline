@@ -163,32 +163,42 @@ export class SearchDBClient {
         this.db
             .prepare(
                 `
-                INSERT INTO query_intent (query_id, intent)
-                VALUES (?, ?)
-                ON CONFLICT(query_id, intent) DO NOTHING
+                INSERT INTO query_intent (intent)
+                VALUES (?)
+                ON CONFLICT(intent) DO NOTHING
                 `
             )
-            .run(queryId, normalizedIntent)
+            .run(normalizedIntent)
 
         const row = this.db
             .prepare(
                 `
-                SELECT id, query_id, intent
+                SELECT id, intent
                 FROM query_intent
-                WHERE query_id = ? AND intent = ?
+                WHERE intent = ?
                 `
             )
-            .get(queryId, normalizedIntent) as
-            | { id: number; query_id: number; intent: string }
+            .get(normalizedIntent) as
+            | { id: number; intent: string }
             | undefined
 
         if (!row) {
             throw new Error("Failed to create or fetch intent")
         }
 
+        this.db
+            .prepare(
+                `
+                INSERT INTO query_query_intent (query_id, intent_id)
+                VALUES (?, ?)
+                ON CONFLICT(query_id, intent_id) DO NOTHING
+                `
+            )
+            .run(queryId, row.id)
+
         return {
             id: row.id,
-            queryId: row.query_id,
+            queryId,
             intent: row.intent,
         }
     }
@@ -197,17 +207,18 @@ export class SearchDBClient {
         const rows = this.db
             .prepare(
                 `
-                SELECT id, query_id, intent
-                FROM query_intent
-                WHERE query_id = ?
-                ORDER BY id ASC
+                SELECT qi.id, qi.intent
+                FROM query_query_intent qqi
+                JOIN query_intent qi ON qi.id = qqi.intent_id
+                WHERE qqi.query_id = ?
+                ORDER BY qi.id ASC
                 `
             )
-            .all(queryId) as Array<{ id: number; query_id: number; intent: string }>
+            .all(queryId) as Array<{ id: number; intent: string }>
 
         return rows.map((row) => ({
             id: row.id,
-            queryId: row.query_id,
+            queryId,
             intent: row.intent,
         }))
     }
@@ -273,10 +284,11 @@ export class SearchDBClient {
             const existing = this.db
                 .prepare(
                     `
-                    SELECT id
-                    FROM article
-                    WHERE intent_id = ?
-                    ORDER BY id ASC
+                    SELECT a.id
+                    FROM query_intent_article qia
+                    JOIN article a ON a.id = qia.article_id
+                    WHERE qia.intent_id = ?
+                    ORDER BY a.id ASC
                     LIMIT 1
                     `
                 )
@@ -297,22 +309,47 @@ export class SearchDBClient {
         const result = this.db
             .prepare(
                 `
-                INSERT INTO article (intent_id, title, slug, content)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO article (title, slug, content)
+                VALUES (?, ?, ?)
                 `
             )
-            .run(intentId, title, uniqueSlug, content)
+            .run(title, uniqueSlug, content)
 
-        return this.getArticleById(result.lastInsertRowid as number)
+        const articleId = result.lastInsertRowid as number
+        if (intentId !== null) {
+            this.db
+                .prepare(
+                    `
+                    INSERT INTO query_intent_article (intent_id, article_id)
+                    VALUES (?, ?)
+                    ON CONFLICT(intent_id, article_id) DO NOTHING
+                    `
+                )
+                .run(intentId, articleId)
+        }
+
+        return this.getArticleById(articleId)
     }
 
     private getArticleById(id: number): ArticleRecord {
         const row = this.db
             .prepare(
                 `
-                SELECT id, intent_id, title, slug, content, created_at
-                FROM article
-                WHERE id = ?
+                SELECT
+                    a.id,
+                    a.title,
+                    a.slug,
+                    a.content,
+                    a.created_at,
+                    (
+                        SELECT qia.intent_id
+                        FROM query_intent_article qia
+                        WHERE qia.article_id = a.id
+                        ORDER BY qia.intent_id ASC
+                        LIMIT 1
+                    ) AS intent_id
+                FROM article a
+                WHERE a.id = ?
                 `
             )
             .get(id) as
@@ -349,10 +386,11 @@ export class SearchDBClient {
             const articleRows = this.db
                 .prepare(
                     `
-                    SELECT id, title, slug, content, created_at
-                    FROM article
-                    WHERE intent_id = ?
-                    ORDER BY id ASC
+                    SELECT a.id, a.title, a.slug, a.content, a.created_at
+                    FROM query_intent_article qia
+                    JOIN article a ON a.id = qia.article_id
+                    WHERE qia.intent_id = ?
+                    ORDER BY a.id ASC
                     `
                 )
                 .all(intentRow.id) as Array<{
@@ -386,30 +424,45 @@ export class SearchDBClient {
         const row = this.db
             .prepare(
                 `
+                WITH article_target AS (
+                    SELECT a.id, a.title, a.slug, a.content, a.created_at
+                    FROM article a
+                    WHERE a.slug = ?
+                    LIMIT 1
+                ),
+                primary_link AS (
+                    SELECT
+                        qi.id AS intent_id,
+                        qi.intent AS intent_value,
+                        qqi.query_id AS query_id
+                    FROM article_target at
+                    JOIN query_intent_article qia ON qia.article_id = at.id
+                    JOIN query_intent qi ON qi.id = qia.intent_id
+                    JOIN query_query_intent qqi ON qqi.intent_id = qi.id
+                    ORDER BY qqi.query_id ASC, qi.id ASC
+                    LIMIT 1
+                )
                 SELECT
-                    a.id AS article_id,
-                    a.intent_id AS article_intent_id,
-                    a.title AS article_title,
-                    a.slug AS article_slug,
-                    a.content AS article_content,
-                    a.created_at AS article_created_at,
-                    qi.id AS intent_id,
-                    qi.intent AS intent_value,
-                    qi.query_id AS query_id,
+                    at.id AS article_id,
+                    at.title AS article_title,
+                    at.slug AS article_slug,
+                    at.content AS article_content,
+                    at.created_at AS article_created_at,
+                    pl.intent_id AS intent_id,
+                    pl.intent_value AS intent_value,
+                    pl.query_id AS query_id,
                     q.value AS query_value,
                     q.language AS query_language,
                     q.original_value AS query_original_value,
                     q.created_at AS query_created_at
-                FROM article a
-                LEFT JOIN query_intent qi ON qi.id = a.intent_id
-                LEFT JOIN query q ON q.id = qi.query_id
-                WHERE a.slug = ?
+                FROM article_target at
+                LEFT JOIN primary_link pl ON 1 = 1
+                LEFT JOIN query q ON q.id = pl.query_id
                 `
             )
             .get(slug) as
             | {
                   article_id: number
-                  article_intent_id: number | null
                   article_title: string
                   article_slug: string
                   article_content: string
@@ -431,10 +484,11 @@ export class SearchDBClient {
                 ? (this.db
                       .prepare(
                           `
-                          SELECT id, intent
-                          FROM query_intent
-                          WHERE query_id = ? AND id != ?
-                          ORDER BY id ASC
+                          SELECT qi.id, qi.intent
+                          FROM query_query_intent qqi
+                          JOIN query_intent qi ON qi.id = qqi.intent_id
+                          WHERE qqi.query_id = ? AND qi.id != ?
+                          ORDER BY qi.id ASC
                           `
                       )
                       .all(row.query_id, row.intent_id) as Array<{
@@ -446,7 +500,7 @@ export class SearchDBClient {
         const payload: ArticleDetailPayload = {
             article: {
                 id: row.article_id,
-                intentId: row.article_intent_id,
+                intentId: row.intent_id,
                 title: row.article_title,
                 slug: row.article_slug,
                 content: row.article_content,
@@ -488,10 +542,10 @@ export class SearchDBClient {
         const row = this.db
             .prepare(
                 `
-                SELECT qi.id
-                FROM query_intent qi
-                LEFT JOIN article a ON a.intent_id = qi.id
-                WHERE qi.query_id = ?
+                SELECT qqi.id
+                FROM query_query_intent qqi
+                JOIN query_intent_article qia ON qia.intent_id = qqi.intent_id
+                WHERE qqi.query_id = ?
                 LIMIT 1
                 `
             )

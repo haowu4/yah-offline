@@ -129,6 +129,8 @@ export function runMigrations(db: Database.Database) {
         ).map((r) => [r.name, r.checksum])
     )
 
+    let appliedCount = 0
+
     for (const migration of migrations) {
         const checksum = getMigrationChecksum(migration.sql)
         if (applied.has(migration.name)) {
@@ -148,7 +150,14 @@ export function runMigrations(db: Database.Database) {
         })
 
         tx()
+        appliedCount += 1
 
         console.log("Applied migration:", migration.name)
+    }
+
+    if (appliedCount === 0) {
+        console.log(`Migration check complete: 0 applied, schema up to date (${migrations.length} total).`)
+    } else {
+        console.log(`Migration check complete: ${appliedCount} applied (${migrations.length} total).`)
     }
 }

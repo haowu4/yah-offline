@@ -24,3 +24,7 @@ npx @ootc/yah config set [key] -e
 ```bash title='change llm config reset'
 npx @ootc/yah config preset openai/zai/deepseek/moonshot
 ```
+
+```bash title='reset database'
+npx @ootc/yah db reset
+```

@@ -144,7 +144,23 @@ export function SearchUI(props: SearchUIProps) {
             return (
               <section key={intent.id} className={styles.intentCard}>
                 {!isDuplicateTitle ? <h2 className={styles.intentTitle}>{intent.intent}</h2> : null}
-                {intent.isLoading ? <p className={styles.intentStatus}>{t('search.intent.finalizing')}</p> : null}
+                {intent.isLoading ? (
+                  <p className={styles.intentStatus}>
+                    <span>{t('search.intent.finalizing')}</span>
+                    <span className={styles.statusDots} aria-hidden>
+                      <span>.</span>
+                      <span>.</span>
+                      <span>.</span>
+                    </span>
+                  </p>
+                ) : null}
+                {intent.isLoading && intent.articles.length === 0 ? (
+                  <div className={styles.intentPlaceholder} aria-hidden>
+                    <div className={styles.intentPlaceholderTitle} />
+                    <div className={styles.intentPlaceholderLine} />
+                    <div className={styles.intentPlaceholderLineShort} />
+                  </div>
+                ) : null}
                 {intent.articles.length === 0 && !intent.isLoading ? <p>{t('search.intent.noAnswer')}</p> : null}
                 <ul className={styles.articleList}>
                   {intent.articles.map((article) => (

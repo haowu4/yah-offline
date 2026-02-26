@@ -24,6 +24,7 @@ export class AppCtx {
         if (this._db) return this._db;
 
         fs.mkdirSync(path.dirname(this.config.db.dbPath), { recursive: true })
+        console.log(`Database path: ${this.config.db.dbPath}`)
         this._db = new Database(this.config.db.dbPath)
         this._db.pragma("journal_mode = WAL")
         this._db.pragma("foreign_keys = ON")

@@ -27,23 +27,40 @@ export const migrations: Migration[] = [
 
         CREATE TABLE IF NOT EXISTS query_intent (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            query_id INTEGER NOT NULL,
             intent TEXT NOT NULL,
-            FOREIGN KEY (query_id) REFERENCES query(id) ON DELETE CASCADE,
-            UNIQUE (query_id, intent)
+            UNIQUE (intent)
         );
-        CREATE INDEX IF NOT EXISTS idx_query_intent_query_id ON query_intent(query_id);
+        CREATE INDEX IF NOT EXISTS idx_query_intent_intent ON query_intent(intent);
+
+        CREATE TABLE IF NOT EXISTS query_query_intent (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_id INTEGER NOT NULL,
+            intent_id INTEGER NOT NULL,
+            FOREIGN KEY (query_id) REFERENCES query(id) ON DELETE CASCADE,
+            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE CASCADE,
+            UNIQUE (query_id, intent_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_query_query_intent_query_id ON query_query_intent(query_id);
+        CREATE INDEX IF NOT EXISTS idx_query_query_intent_intent_id ON query_query_intent(intent_id);
 
         CREATE TABLE IF NOT EXISTS article (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            intent_id INTEGER,
             title TEXT NOT NULL,
             slug TEXT NOT NULL UNIQUE,
             content TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE SET NULL
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
-        CREATE INDEX IF NOT EXISTS idx_article_intent_id ON article(intent_id);
+
+        CREATE TABLE IF NOT EXISTS query_intent_article (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            intent_id INTEGER NOT NULL,
+            article_id INTEGER NOT NULL,
+            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE CASCADE,
+            FOREIGN KEY (article_id) REFERENCES article(id) ON DELETE CASCADE,
+            UNIQUE (intent_id, article_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_query_intent_article_intent_id ON query_intent_article(intent_id);
+        CREATE INDEX IF NOT EXISTS idx_query_intent_article_article_id ON query_intent_article(article_id);
 
         CREATE TABLE IF NOT EXISTS search_spell_cache (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

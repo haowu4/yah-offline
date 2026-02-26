@@ -54,7 +54,18 @@ async function main() {
       }
 
       const tables = db.getTableNames()
-      const requiredTables = ["config_value", "query", "query_intent", "article", "llm_job", "llm_event", "query_history", "search_spell_cache"]
+      const requiredTables = [
+        "config_value",
+        "query",
+        "query_intent",
+        "query_query_intent",
+        "article",
+        "query_intent_article",
+        "llm_job",
+        "llm_event",
+        "query_history",
+        "search_spell_cache",
+      ]
       for (const table of requiredTables) {
         if (!tables.includes(table)) {
           throw new Error(`Expected ${table} table to exist after migrations`)

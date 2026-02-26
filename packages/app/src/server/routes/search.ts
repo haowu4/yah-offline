@@ -41,9 +41,42 @@ function normalizeForDiff(value: string): string {
     .replace(/\s+/g, " ")
 }
 
+function normalizeCompact(value: string): string {
+  return normalizeForDiff(value).replace(/\s+/g, "")
+}
+
 function isMeaningfullyDifferent(original: string, corrected: string): boolean {
   if (!corrected.trim()) return false
-  return normalizeForDiff(original) !== normalizeForDiff(corrected)
+  const normalizedOriginal = normalizeForDiff(original)
+  const normalizedCorrected = normalizeForDiff(corrected)
+  if (normalizedOriginal === normalizedCorrected) return false
+  // Ignore punctuation/spacing-only rewrites like:
+  // "胰岛素抵抗 基础概念" -> "胰岛素抵抗：基础概念"
+  if (normalizeCompact(original) === normalizeCompact(corrected)) return false
+  return true
+}
+
+function isPlausibleCorrection(original: string, corrected: string): boolean {
+  const source = original.trim()
+  const candidate = corrected.trim()
+  if (!source || !candidate) return false
+  if (/[\r\n]/.test(candidate)) return false
+
+  const sourceCompact = normalizeCompact(source)
+  const candidateCompact = normalizeCompact(candidate)
+  if (!candidateCompact) return false
+
+  const maxLen = Math.max(96, source.length * 3 + 16)
+  const maxCompactLen = Math.max(96, sourceCompact.length * 3 + 16)
+  if (candidate.length > maxLen) return false
+  if (candidateCompact.length > maxCompactLen) return false
+
+  // A short query correction should stay query-like and not turn into prose.
+  if (source.length <= 64 && /[.!?。！？]/.test(candidate) && candidate.length > source.length + 20) {
+    return false
+  }
+
+  return true
 }
 
 async function withTimeout<T>(run: () => Promise<T>, timeoutMs: number): Promise<T> {
@@ -92,12 +125,14 @@ function parseStringArrayOrFallback(rawValue: string | null, fallback: string[])
 }
 
 const fallbackExampleQueries = [
+  "laplace transform table",
+  "schrodinger equation intuition",
+  "database indexing strategy",
   "sqlite fts5 bm25",
-  "rag architecture",
-  "node express memory leak",
-  "typescript api error handling",
-  "self hosted vector database",
-  "llm system prompt template",
+  "ubuntu install ohmyzsh",
+  "rag chunking strategy",
+  "causes of world war i",
+  "insulin resistance basics",
 ]
 
 function parseExampleQueries(rawValue: string | null): string[] {
@@ -176,7 +211,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     run: () => Promise<T>
   }): Promise<T> => {
     const retryMaxAttempts = parsePositiveIntOrDefault(configDB.getValue("llm.retry.max_attempts"), 2)
-    const timeoutMs = parsePositiveIntOrDefault(configDB.getValue("llm.retry.timeout_ms"), 20000)
+    const timeoutMs = parsePositiveIntOrDefault(configDB.getValue("llm.retry.timeout_ms"), 40000)
     let lastError: unknown = null
 
     for (let attempt = 1; attempt <= retryMaxAttempts; attempt += 1) {
@@ -262,7 +297,9 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
         })
 
         if (cached?.correctedText) {
-          correctedCandidate = cached.correctedText
+          if (isPlausibleCorrection(originalQueryValue, cached.correctedText)) {
+            correctedCandidate = cached.correctedText
+          }
         } else {
           const correction = await callMagicWithRetry({
             trigger: "spelling-correction",
@@ -274,8 +311,9 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
               }),
           })
 
-          correctedCandidate = correction.text.trim()
-          if (correctedCandidate) {
+          const nextCandidate = correction.text.trim()
+          if (isPlausibleCorrection(originalQueryValue, nextCandidate)) {
+            correctedCandidate = nextCandidate
             searchDB.upsertSpellCorrection({
               sourceText: originalQueryValue,
               language,

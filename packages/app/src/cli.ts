@@ -140,6 +140,31 @@ function resetDBFiles(dbPath: string) {
     fs.rmSync(`${dbPath}-shm`, { force: true })
 }
 
+function printMissingApiKeySetupHelp(errorMessage: string): boolean {
+    const match = errorMessage.match(/Set environment variable:\s*([A-Z0-9_]+)/)
+    if (!match?.[1]) return false
+
+    const envName = match[1]
+    const presetByEnvName: Record<string, string> = {
+        OPENAI_API_KEY: "openai",
+        ZAI_API_KEY: "zai",
+        DEEPSEEK_API_KEY: "deepseek",
+        MOONSHOT_API_KEY: "moonshot",
+    }
+    const suggestedPreset = presetByEnvName[envName] || "openai"
+
+    console.error(errorMessage)
+    console.error("")
+    console.error("LLM setup required before starting server:")
+    console.error(`1. Apply preset: npx @ootc/yah config preset ${suggestedPreset}`)
+    console.error("2. Edit env file: npx @ootc/yah env edit")
+    console.error(`3. Add API key: ${envName}=your_key_here`)
+    console.error("4. Start server: npx @ootc/yah start")
+    console.error("")
+    console.error("Helpful command: npx @ootc/yah env location")
+    return true
+}
+
 async function main() {
     const args = process.argv.slice(2)
     const command = args[0]
@@ -267,6 +292,10 @@ async function main() {
 }
 
 main().catch((error) => {
-    console.error(error instanceof Error ? error.message : error)
+    const message = error instanceof Error ? error.message : String(error)
+    if (printMissingApiKeySetupHelp(message)) {
+        process.exit(1)
+    }
+    console.error(message)
     process.exit(1)
 })

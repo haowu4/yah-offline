@@ -28,9 +28,10 @@ export const migrations: Migration[] = [
         CREATE TABLE IF NOT EXISTS query_intent (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             intent TEXT NOT NULL,
-            UNIQUE (intent)
+            filetype TEXT NOT NULL DEFAULT 'md',
+            UNIQUE (intent, filetype)
         );
-        CREATE INDEX IF NOT EXISTS idx_query_intent_intent ON query_intent(intent);
+        CREATE INDEX IF NOT EXISTS idx_query_intent_intent_filetype ON query_intent(intent, filetype);
 
         CREATE TABLE IF NOT EXISTS query_query_intent (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +48,7 @@ export const migrations: Migration[] = [
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             slug TEXT NOT NULL UNIQUE,
+            filetype TEXT NOT NULL DEFAULT 'md',
             content TEXT NOT NULL,
             generated_by TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -161,6 +163,31 @@ export const migrations: Migration[] = [
             FOREIGN KEY (order_id) REFERENCES generation_order(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_generation_log_order_created ON generation_log(order_id, created_at, id);
+
+        CREATE TABLE IF NOT EXISTS article_generation_run (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_id INTEGER NOT NULL,
+            intent_id INTEGER,
+            article_id INTEGER,
+            order_id INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+            attempts INTEGER,
+            duration_ms INTEGER,
+            llm_duration_ms INTEGER,
+            error_message TEXT,
+            started_at TEXT NOT NULL DEFAULT (datetime('now')),
+            finished_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (query_id) REFERENCES query(id) ON DELETE CASCADE,
+            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE SET NULL,
+            FOREIGN KEY (article_id) REFERENCES article(id) ON DELETE SET NULL,
+            FOREIGN KEY (order_id) REFERENCES generation_order(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_article_generation_run_article ON article_generation_run(article_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_article_generation_run_intent ON article_generation_run(intent_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_article_generation_run_order ON article_generation_run(order_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_article_generation_run_status ON article_generation_run(status, created_at DESC);
 
         CREATE TABLE IF NOT EXISTS generation_lock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -29,12 +29,14 @@ export abstract class AbstractMagicApi {
   abstract resolveIntent(args: {
     query: string
     language?: string
+    filetype?: string
   }): Promise<MagicSearchIntentResult>
 
   abstract createArticle(args: {
     query: string
     intent: string
     language?: string
+    filetype?: string
   }): Promise<MagicSearchArticleResult>
 
   abstract createImage(args: {

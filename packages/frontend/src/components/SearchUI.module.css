@@ -178,6 +178,12 @@
   animation-delay: 0.4s;
 }
 
+.statusTiming {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #6d7683;
+}
+
 .debugPanel {
   margin: 0 0 14px;
   padding: 10px;

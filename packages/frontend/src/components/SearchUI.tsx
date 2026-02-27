@@ -21,6 +21,11 @@ type SearchUIProps = {
   debugEvents: SearchDebugEvent[]
   isReplayed: boolean
   error: string | null
+  validationError?: string | null
+  elapsedLabel?: string | null
+  typicalTotalLabel?: string | null
+  etaLabel?: string | null
+  overrunLabel?: string | null
   examples: string[]
   recent: ApiSearchSuggestionItem[]
   isFirstTimeUser: boolean
@@ -66,6 +71,17 @@ export function SearchUI(props: SearchUIProps) {
               <span>.</span>
               <span>.</span>
             </span>
+            {props.elapsedLabel ? (
+              <span className={styles.statusTiming}>
+                {t('search.status.elapsed', { value: props.elapsedLabel })}
+                {props.typicalTotalLabel ? ` · ${t('search.status.typicalTotal', { value: props.typicalTotalLabel })}` : ''}
+                {props.overrunLabel
+                  ? ` · ${t('search.status.longerThanUsual', { value: props.overrunLabel })}`
+                  : props.etaLabel
+                    ? ` · ${t('search.status.eta', { value: props.etaLabel })}`
+                    : ''}
+              </span>
+            ) : null}
           </p>
           <Menu as="div" className={styles.menuWrap}>
             <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
@@ -184,6 +200,11 @@ export function SearchUI(props: SearchUIProps) {
               </MenuItem>
             </MenuItems>
           </Menu>
+        </div>
+      ) : null}
+      {props.validationError ? (
+        <div className={styles.errorRow}>
+          <p className={styles.error}>{props.validationError}</p>
         </div>
       ) : null}
 

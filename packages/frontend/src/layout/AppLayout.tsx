@@ -16,6 +16,7 @@ export function AppLayout() {
 
   const isConfigPage = location.pathname.startsWith('/config')
   const isOrderLogsPage = location.pathname.startsWith('/orders')
+  const isArticleTimingPage = location.pathname.startsWith('/article-timing') || location.pathname.startsWith('/generation-performance')
   const isLLMFailuresPage = location.pathname.startsWith('/llm/failures')
 
   const currentSearchInput = (() => {
@@ -32,7 +33,7 @@ export function AppLayout() {
     return ''
   })()
   const shouldShowNavSearch =
-    !isConfigPage && !isOrderLogsPage && !isLLMFailuresPage && !(location.pathname === '/search' && currentSearchInput.trim() === '')
+    !isConfigPage && !isOrderLogsPage && !isArticleTimingPage && !isLLMFailuresPage && !(location.pathname === '/search' && currentSearchInput.trim() === '')
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -75,6 +76,11 @@ export function AppLayout() {
   const goToLLMFailures = () => {
     setIsMenuOpen(false)
     navigate('/llm/failures')
+  }
+
+  const goToArticleTiming = () => {
+    setIsMenuOpen(false)
+    navigate('/generation-performance')
   }
 
   const goToOrderLogs = () => {
@@ -149,6 +155,16 @@ export function AppLayout() {
                 >
                   <span className={styles.menuItemText}>
                     <span className={styles.menuItemLabel}>{t('layout.menu.orders')}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={goToArticleTiming}
+                  className={`${styles.menuItem} ${isArticleTimingPage ? styles.menuItemActive : ''}`}
+                  role="menuitem"
+                >
+                  <span className={styles.menuItemText}>
+                    <span className={styles.menuItemLabel}>Generation Performance</span>
                   </span>
                 </button>
                 <button

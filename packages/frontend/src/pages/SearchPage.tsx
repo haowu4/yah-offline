@@ -4,12 +4,47 @@ import { SearchUI } from '../components/SearchUI'
 import { useSearchCtx } from '../ctx/SearchCtx'
 import { useLanguageCtx } from '../ctx/LanguageCtx'
 import { useI18n } from '../i18n/useI18n'
-import { getSearchSuggestions, type ApiSearchSuggestionItem } from '../lib/api/search'
+import {
+  getArticleGenerationEta,
+  getSearchSuggestions,
+  type ApiSearchSuggestionItem,
+  type ArticleGenerationEtaPayload,
+} from '../lib/api/search'
+import { listConfigs } from '../lib/api/config'
 import styles from './SearchPage.module.css'
 
 function parseSpellMode(value: string | null): 'off' | 'auto' | 'force' {
   if (value === 'off' || value === 'auto' || value === 'force') return value
   return 'auto'
+}
+
+const DEFAULT_FILETYPE_ALLOWLIST = new Set([
+  'md', 'txt', 'sh', 'bash', 'zsh', 'py', 'js', 'ts', 'tsx', 'jsx',
+  'json', 'yaml', 'yml', 'toml', 'ini', 'xml', 'sql', 'csv', 'java',
+  'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'rb', 'php',
+])
+const DEFAULT_ARTICLE_ETA_MS = 8000
+const INITIAL_EXPECTED_ARTICLE_COUNT = 4
+
+function parseFiletypeOperators(query: string): { filetypes: string[] } {
+  const filetypes: string[] = []
+  const tokens = query.trim().split(/\s+/).filter(Boolean)
+  for (const token of tokens) {
+    const match = token.match(/^filetype:(.+)$/i)
+    if (!match) continue
+    const normalized = (match[1] || '').trim().toLowerCase().replace(/^\.+/, '')
+    if (!normalized || !/^[a-z0-9][a-z0-9_-]{0,15}$/.test(normalized)) continue
+    filetypes.push(normalized)
+  }
+  return { filetypes }
+}
+
+function formatDurationShort(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`
+  return `${seconds}s`
 }
 
 export function SearchPage() {
@@ -26,6 +61,11 @@ export function SearchPage() {
   const [examples, setExamples] = useState<string[]>([])
   const [recent, setRecent] = useState<ApiSearchSuggestionItem[]>([])
   const [isFirstTimeUser, setIsFirstTimeUser] = useState(true)
+  const [filetypeAllowlist, setFiletypeAllowlist] = useState<Set<string>>(DEFAULT_FILETYPE_ALLOWLIST)
+  const [eta, setEta] = useState<ArticleGenerationEtaPayload | null>(null)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const loadingStartedAtRef = useRef<number | null>(null)
+  const [validationError, setValidationError] = useState<string | null>(null)
   const [rerunMode, setRerunMode] = useState<'query' | 'intents' | null>(null)
   const [rerunningIntentIds, setRerunningIntentIds] = useState<number[]>([])
 
@@ -55,6 +95,82 @@ export function SearchPage() {
       cancelled = true
     }
   }, [locale, queryFromUrl])
+
+  useEffect(() => {
+    let cancelled = false
+    void listConfigs()
+      .then((payload) => {
+        if (cancelled) return
+        const row = payload.configs.find((item) => item.key === 'search.filetype.allowlist')
+        if (!row?.value) return
+        try {
+          const parsed = JSON.parse(row.value) as unknown
+          if (!Array.isArray(parsed)) return
+          const normalized = parsed
+            .filter((item): item is string => typeof item === 'string')
+            .map((item) => item.trim().toLowerCase())
+            .filter(Boolean)
+          if (normalized.length === 0) return
+          setFiletypeAllowlist(new Set(normalized))
+        } catch {
+          // Keep default allowlist in frontend; backend remains source of truth.
+        }
+      })
+      .catch(() => {
+        // Config routes may be disabled in some environments.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void getArticleGenerationEta()
+      .then((payload) => {
+        if (cancelled) return
+        setEta(payload)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setEta(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!search.isLoading) {
+      loadingStartedAtRef.current = null
+      setElapsedMs(0)
+      return
+    }
+    if (loadingStartedAtRef.current == null) {
+      loadingStartedAtRef.current = Date.now()
+    }
+    const timer = setInterval(() => {
+      if (loadingStartedAtRef.current == null) return
+      setElapsedMs(Date.now() - loadingStartedAtRef.current)
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [search.isLoading])
+
+  const elapsedLabel = search.isLoading ? formatDurationShort(elapsedMs) : null
+  const expectedArticleCount = search.queryIntents.length > 0
+    ? Math.max(1, search.queryIntents.length)
+    : INITIAL_EXPECTED_ARTICLE_COUNT
+  const averageDurationMs = eta?.enabled
+    ? (typeof eta.averageDurationMs === 'number' && eta.averageDurationMs > 0 ? eta.averageDurationMs : DEFAULT_ARTICLE_ETA_MS)
+    : null
+  const typicalTotalMs = averageDurationMs !== null ? averageDurationMs * expectedArticleCount : null
+  const typicalTotalLabel = typicalTotalMs !== null ? formatDurationShort(typicalTotalMs) : null
+  const etaMs = typicalTotalMs !== null ? Math.max(0, typicalTotalMs - elapsedMs) : null
+  const etaLabel = etaMs !== null ? formatDurationShort(etaMs) : null
+  const overrunMs = typicalTotalMs !== null && elapsedMs > typicalTotalMs ? elapsedMs - typicalTotalMs : null
+  const overrunLabel = overrunMs !== null ? formatDurationShort(overrunMs) : null
 
   useEffect(() => {
     if (queryFromUrl) return
@@ -139,8 +255,20 @@ export function SearchPage() {
     if (!trimmed) {
       navigate('/search')
       search.reset()
+      setValidationError(null)
       return
     }
+
+    const parsedOperators = parseFiletypeOperators(trimmed)
+    if (parsedOperators.filetypes.length > 1) {
+      setValidationError(t('search.validation.filetype.multiple'))
+      return
+    }
+    if (parsedOperators.filetypes.length === 1 && !filetypeAllowlist.has(parsedOperators.filetypes[0])) {
+      setValidationError(t('search.validation.filetype.unsupported', { filetype: parsedOperators.filetypes[0] }))
+      return
+    }
+    setValidationError(null)
 
     const params = new URLSearchParams()
     params.set('query', trimmed)
@@ -227,6 +355,11 @@ export function SearchPage() {
         debugEvents={search.debugEvents}
         isReplayed={search.isReplayed}
         error={search.error}
+        validationError={validationError}
+        elapsedLabel={elapsedLabel}
+        typicalTotalLabel={typicalTotalLabel}
+        etaLabel={etaLabel}
+        overrunLabel={overrunLabel}
         examples={examples}
         recent={recent}
         isFirstTimeUser={isFirstTimeUser}

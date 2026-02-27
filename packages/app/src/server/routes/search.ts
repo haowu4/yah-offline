@@ -5,6 +5,7 @@ import { logDebugJson, logLine, createCallId, ellipsis40, errorDetails, errorSto
 import { EventDispatcher } from "../llm/eventDispatcher.js"
 import { AbstractMagicApi } from "../../magic/api.js"
 import { GenerationOrderEvent, GenerationOrderKind, GenerationOrderRecord } from "../../type/order.js"
+import { parseFiletypeOperators } from "../search/queryOperators.js"
 
 function parseQueryId(value: string): number | null {
   const parsed = Number.parseInt(value, 10)
@@ -107,6 +108,15 @@ function parsePositiveIntOrDefault(input: string | null, defaultValue: number): 
   return Number.isInteger(parsed) && parsed > 0 ? parsed : defaultValue
 }
 
+function parseBooleanOrDefault(input: string | null, defaultValue: boolean): boolean {
+  if (input == null) return defaultValue
+  const normalized = input.trim().toLowerCase()
+  if (!normalized) return defaultValue
+  if (normalized === "1" || normalized === "true") return true
+  if (normalized === "0" || normalized === "false") return false
+  return defaultValue
+}
+
 function parseStringArrayOrFallback(rawValue: string | null, fallback: string[]): string[] {
   if (!rawValue) return fallback
   try {
@@ -182,6 +192,35 @@ function resolveExampleQueriesForLanguage(configDB: { getValue: (key: string) =>
 }
 
 const fallbackRecentBlacklistTerms = ["test", "testing", "asdf", "qwer", "zxcv", "1234"]
+const fallbackFiletypeAllowlist = [
+  "md",
+  "txt",
+  "sh",
+  "bash",
+  "zsh",
+  "py",
+  "js",
+  "ts",
+  "tsx",
+  "jsx",
+  "json",
+  "yaml",
+  "yml",
+  "toml",
+  "ini",
+  "xml",
+  "sql",
+  "csv",
+  "java",
+  "c",
+  "cpp",
+  "h",
+  "hpp",
+  "go",
+  "rs",
+  "rb",
+  "php",
+]
 
 function shouldTrackRecentQuery(args: {
   query: string
@@ -205,6 +244,11 @@ function parseOrderStatus(raw: unknown): "queued" | "running" | "completed" | "f
   if (raw === "queued" || raw === "running" || raw === "completed" || raw === "failed" || raw === "cancelled") {
     return raw
   }
+  return null
+}
+
+function parseArticleRunStatus(raw: unknown): "running" | "completed" | "failed" | null {
+  if (raw === "running" || raw === "completed" || raw === "failed") return raw
   return null
 }
 
@@ -309,9 +353,29 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       "auto"
     )
     const spellCorrectionMode = parseSpellCorrectionMode(req.body?.spellCorrectionMode, spellModeDefault)
+    const filetypeAllowlist = parseStringArrayOrFallback(
+      configDB.getValue("search.filetype.allowlist"),
+      fallbackFiletypeAllowlist
+    )
+    const parsedOriginalQuery = parseFiletypeOperators(originalQueryValue)
+
+    if (parsedOriginalQuery.operatorCount > 1) {
+      res.status(400).json({ error: "only one filetype operator is allowed" })
+      return
+    }
+    if (!parsedOriginalQuery.cleanQuery) {
+      res.status(400).json({ error: "query text is required" })
+      return
+    }
+    if (parsedOriginalQuery.filetype && !filetypeAllowlist.includes(parsedOriginalQuery.filetype)) {
+      res.status(400).json({ error: `unsupported filetype: ${parsedOriginalQuery.filetype}` })
+      return
+    }
+
+    const canonicalOriginalQuery = parsedOriginalQuery.queryWithOperator || parsedOriginalQuery.cleanQuery
 
     try {
-      const existingQuery = searchDB.getQueryByValueAndLanguage(originalQueryValue, language)
+      const existingQuery = searchDB.getQueryByValueAndLanguage(canonicalOriginalQuery, language)
       if (existingQuery) {
         const recentMinChars = parsePositiveIntOrDefault(configDB.getValue("search.recent.min_query_chars"), 3)
         const recentDedupeWindowSeconds = parsePositiveIntOrDefault(
@@ -352,31 +416,31 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       let correctedCandidate = ""
       if (spellCorrectionMode !== "off") {
         const cached = searchDB.getSpellCorrection({
-          sourceText: originalQueryValue,
+          sourceText: parsedOriginalQuery.cleanQuery,
           language,
           provider: magicApi.providerName({}),
         })
 
         if (cached?.correctedText) {
-          if (isPlausibleCorrection(originalQueryValue, cached.correctedText)) {
+          if (isPlausibleCorrection(parsedOriginalQuery.cleanQuery, cached.correctedText)) {
             correctedCandidate = cached.correctedText
           }
         } else {
           const correction = await callMagicWithRetry({
             trigger: "spelling-correction",
-            query: originalQueryValue,
+            query: parsedOriginalQuery.cleanQuery,
             run: () =>
               magicApi.correctSpelling({
-                text: originalQueryValue,
+                text: parsedOriginalQuery.cleanQuery,
                 language,
               }),
           })
 
           const nextCandidate = correction.text.trim()
-          if (isPlausibleCorrection(originalQueryValue, nextCandidate)) {
+          if (isPlausibleCorrection(parsedOriginalQuery.cleanQuery, nextCandidate)) {
             correctedCandidate = nextCandidate
             searchDB.upsertSpellCorrection({
-              sourceText: originalQueryValue,
+              sourceText: parsedOriginalQuery.cleanQuery,
               language,
               provider: magicApi.providerName({}),
               correctedText: correctedCandidate,
@@ -389,12 +453,13 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
         spellCorrectionMode === "force"
           ? Boolean(correctedCandidate.trim())
           : spellCorrectionMode === "auto"
-            ? isMeaningfullyDifferent(originalQueryValue, correctedCandidate)
+            ? isMeaningfullyDifferent(parsedOriginalQuery.cleanQuery, correctedCandidate)
             : false
 
-      const effectiveQuery = shouldApplyCorrection && correctedCandidate.trim()
+      const effectiveCleanQuery = shouldApplyCorrection && correctedCandidate.trim()
         ? correctedCandidate.trim()
-        : originalQueryValue
+        : parsedOriginalQuery.cleanQuery
+      const effectiveQuery = `${effectiveCleanQuery}${parsedOriginalQuery.filetype ? ` filetype:${parsedOriginalQuery.filetype}` : ""}`.trim()
 
       const query = searchDB.upsertQuery({
         value: effectiveQuery,
@@ -643,7 +708,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
         return {
           ...order,
           query: query ? { id: query.id, value: query.value, language: query.language } : null,
-          intent: intent ? { id: intent.id, value: intent.intent } : null,
+          intent: intent ? { id: intent.id, value: intent.intent, filetype: intent.filetype } : null,
         }
       }),
     })
@@ -687,6 +752,28 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       component: component || undefined,
     })
     res.json({ pagination: { limit, offset, total }, failures })
+  })
+
+  router.get("/article-generation-runs", (req, res) => {
+    const limitRaw = typeof req.query.limit === "string" ? req.query.limit : null
+    const offsetRaw = typeof req.query.offset === "string" ? req.query.offset : null
+    const limit = parsePositiveIntOrDefault(limitRaw, 120)
+    const offset = parsePositiveIntOrDefault(offsetRaw, 0)
+    const status = parseArticleRunStatus(req.query.status)
+
+    const runs = searchDB.listArticleGenerationRuns({
+      limit,
+      offset,
+      status: status ?? undefined,
+    })
+    const total = searchDB.countArticleGenerationRuns({
+      status: status ?? undefined,
+    })
+
+    res.json({
+      pagination: { limit, offset, total },
+      runs,
+    })
   })
 
   router.get("/orders/:order_id/stream", (req, res) => {
@@ -803,6 +890,21 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       isFirstTimeUser: searchDB.getQueryHistoryCount() === 0,
     }
     res.json(payload)
+  })
+
+  router.get("/search/eta", (_req, res) => {
+    const enabled = parseBooleanOrDefault(configDB.getValue("search.article_generation_eta.enabled"), true)
+    const sampleSize = parsePositiveIntOrDefault(configDB.getValue("search.article_generation_eta.sample_size"), 20)
+    const stats = enabled
+      ? searchDB.getArticleGenerationDurationStats({ sampleSize })
+      : { averageDurationMs: null, sampleCount: 0 }
+
+    res.json({
+      enabled,
+      sampleSize,
+      sampleCount: stats.sampleCount,
+      averageDurationMs: stats.averageDurationMs,
+    })
   })
 
   router.get("/article", (req, res) => {

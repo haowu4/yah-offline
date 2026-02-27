@@ -140,6 +140,19 @@ function slugify(input: string): string {
   return normalized || "untitled"
 }
 
+function normalizeFiletype(value: string | null | undefined): string {
+  const normalized = (value || "").trim().toLowerCase().replace(/^\.+/, "")
+  return normalized || "md"
+}
+
+function ensureSlugHasFiletype(slug: string, filetype: string): string {
+  const normalizedSlug = slug.trim() || "untitled"
+  const normalizedType = normalizeFiletype(filetype)
+  const suffix = `.${normalizedType}`
+  if (normalizedSlug.toLowerCase().endsWith(suffix)) return normalizedSlug
+  return `${normalizedSlug}${suffix}`
+}
+
 function normalizeIntents(intents: string[]): string[] {
   const unique = new Set<string>()
   for (const intent of intents) {
@@ -487,9 +500,11 @@ export class OpenaiMagicApi extends AbstractMagicApi {
   async resolveIntent(args: {
     query: string
     language?: string
+    filetype?: string
   }): Promise<MagicSearchIntentResult> {
     const configDB = this.appCtx.dbClients.config()
     const model = requiredConfigValue(configDB, "search.intent_resolve.model")
+    const filetype = normalizeFiletype(args.filetype)
 
     const trace = await this.createToolJsonWithTrace<{ intents?: string[] }>({
       model,
@@ -499,6 +514,7 @@ export class OpenaiMagicApi extends AbstractMagicApi {
       user: [
         args.language ? `Language: ${args.language}` : "Language: auto-detect",
         `Query: ${args.query}`,
+        `Requested output filetype: ${filetype}`,
       ].join("\n"),
       toolName: "submit_intents",
       toolDescription: "Return the resolved search intents",
@@ -521,11 +537,30 @@ export class OpenaiMagicApi extends AbstractMagicApi {
   async createArticle(args: {
     query: string
     intent: string
-  language?: string
+    language?: string
+    filetype?: string
   }): Promise<MagicSearchArticleResult> {
     const configDB = this.appCtx.dbClients.config()
     const model = requiredConfigValue(configDB, "search.content_generation.model")
     const toolChoiceMode = parseToolChoiceMode(configDB.getValue("llm.tool_choice.mode"))
+    const filetype = normalizeFiletype(args.filetype)
+    const isMarkdownOutput = filetype === "md"
+    const systemPrompt = isMarkdownOutput
+      ? "Write one useful markdown article for a search intent. " +
+        "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
+        "Do not use escaped or alternative latex delimiters."
+      : `Write one useful ${filetype} file for a search intent. ` +
+        "Return file content only in the content field, with no markdown fences and no prose outside the generated file text."
+    const fallbackSystemPrompt = isMarkdownOutput
+      ? "Write one useful markdown article for a search intent. Return JSON only: " +
+        "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
+        "Do not wrap JSON in markdown code fences. " +
+        "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
+        "Do not use escaped or alternative latex delimiters."
+      : `Write one useful ${filetype} file for a search intent. Return JSON only: ` +
+        "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
+        "Do not wrap JSON in markdown code fences. " +
+        "The content must be raw file text with no markdown fences."
 
     const client = this.refreshClientIfNeeded()
     const requestBodyForLog: Record<string, unknown> = {
@@ -534,10 +569,7 @@ export class OpenaiMagicApi extends AbstractMagicApi {
       messages: [
         {
           role: "system" as const,
-          content:
-            "Write one useful markdown article for a search intent. " +
-            "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
-            "Do not use escaped or alternative latex delimiters.",
+          content: systemPrompt,
         },
         {
           role: "user" as const,
@@ -545,6 +577,7 @@ export class OpenaiMagicApi extends AbstractMagicApi {
             args.language ? `Language: ${args.language}` : "Language: auto-detect",
             `Query: ${args.query}`,
             `Intent: ${args.intent}`,
+            `Filetype: ${filetype}`,
           ].join("\n"),
         },
       ],
@@ -647,16 +680,12 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     if (!normalized.content) {
       const fallback = await this.createTextWithTrace({
         model,
-        system:
-          "Write one useful markdown article for a search intent. Return JSON only: " +
-          "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
-          "Do not wrap JSON in markdown code fences. " +
-          "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
-          "Do not use escaped or alternative latex delimiters.",
+        system: fallbackSystemPrompt,
         user: [
           args.language ? `Language: ${args.language}` : "Language: auto-detect",
           `Query: ${args.query}`,
           `Intent: ${args.intent}`,
+          `Filetype: ${filetype}`,
         ].join("\n"),
       })
       fallbackRawResponse = fallback.rawResponse
@@ -690,7 +719,7 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     return {
       article: {
         title,
-        slug: normalized.slug,
+        slug: ensureSlugHasFiletype(normalized.slug, filetype),
         content,
         generatedBy: `${(this.transportSnapshot?.baseURL || "default").trim() || "default"}:${model}`,
       },

@@ -30,6 +30,10 @@ const EN: Record<string, string> = {
   'search.status.showingResults': 'Showing results for "{query}"',
   'search.status.includingResults': 'Including results for "{query}".',
   'search.status.searchOnlyFor': 'Search only for "{query}"',
+  'search.status.elapsed': 'Elapsed: {value}',
+  'search.status.typicalTotal': 'Typical total: ~{value}',
+  'search.status.eta': 'ETA: ~{value}',
+  'search.status.longerThanUsual': 'Longer than usual: +{value}',
   'search.home.placeholder': 'Search...',
   'search.home.submit': 'Search',
   'search.home.recent': 'Recent searches',
@@ -54,6 +58,8 @@ const EN: Record<string, string> = {
   'search.debug.orderNone': 'Active order: none',
   'search.debug.empty': 'No stream events yet.',
   'search.sse.error': 'SSE connection failed',
+  'search.validation.filetype.multiple': 'Only one filetype: operator is allowed.',
+  'search.validation.filetype.unsupported': 'Unsupported filetype: {filetype}',
 
   'llmFailures.page.title': 'LLM Errors | yah',
   'llmFailures.title': 'LLM Errors',
@@ -161,6 +167,7 @@ const EN: Record<string, string> = {
   'article.action.regenerating': 'Regenerating...',
   'article.related.query': 'Related query',
   'article.related.intents': 'Other intents',
+  'article.related.topics': 'Related topics',
   'article.related.none': 'No related intents.',
 }
 

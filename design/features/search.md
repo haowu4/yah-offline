@@ -11,7 +11,26 @@ after server discover user's search intent, it will call another LLM apis for ea
 
 For example, it may write an article titled `how to install git on ubuntu`, with slug `how-to-install-git-on-ubuntu`.
 
-All articles are markdown based.
+By default, articles are markdown based (`filetype:md`).
+
+### filetype operator
+
+Query supports a single `filetype:` operator, similar to Google.
+
+- Example: `ubuntu install zsh filetype:sh`
+- `filetype` is used in both intent resolution and content generation.
+- `filetype:md` explicitly forces markdown output.
+- Non-markdown filetypes generate raw text/code content.
+- Only one `filetype:` operator is allowed per query. Multiple operators return HTTP `400`.
+- Filetype must be in `search.filetype.allowlist` config. Any disallowed filetype returns HTTP `400`.
+
+### article generation timing estimate
+
+The server records generation run timing per article in DB. Search UI uses the average duration from recent runs to show expected time while loading.
+
+Config keys:
+- `search.article_generation_eta.enabled` (`1`/`0`)
+- `search.article_generation_eta.sample_size` (how many recent completed runs to average)
 
 intent and article are generated on each new search query, and results will be streamed back to user via a sse endpoint.
 
@@ -37,4 +56,3 @@ This page looks similar to google resuslts page, but the resutls are grouped by 
 #### Article page `/content/:slug?query=`
 
 This just show the content of the given article, which is markdown. it also show the related query, and other intent of this query (as side bar, similar to related contents in blog sites)
-

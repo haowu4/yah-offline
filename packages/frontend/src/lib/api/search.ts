@@ -10,6 +10,7 @@ export type ApiArticleSummary = {
   id: number
   title: string
   slug: string
+  filetype: string
   snippet: string
   createdAt: string
 }
@@ -17,6 +18,7 @@ export type ApiArticleSummary = {
 export type ApiQueryIntent = {
   id: number
   intent: string
+  filetype: string
   articles: ApiArticleSummary[]
 }
 
@@ -37,12 +39,20 @@ export type ApiSearchSuggestionsPayload = {
   isFirstTimeUser: boolean
 }
 
+export type ArticleGenerationEtaPayload = {
+  enabled: boolean
+  sampleSize: number
+  sampleCount: number
+  averageDurationMs: number | null
+}
+
 export type ApiArticleDetail = {
   article: {
     id: number
     intentId: number | null
     title: string
     slug: string
+    filetype: string
     content: string
     generatedBy: string | null
     createdAt: string
@@ -51,11 +61,14 @@ export type ApiArticleDetail = {
     id: number
     queryId: number
     intent: string
+    filetype: string
   }
   query?: ApiQueryRecord
   relatedIntents: Array<{
     id: number
     intent: string
+    filetype: string
+    articleSlug: string | null
   }>
 }
 
@@ -268,6 +281,10 @@ export async function getSearchSuggestions(args?: {
   }
   const query = params.toString()
   return apiFetch<ApiSearchSuggestionsPayload>(`/search/suggestions${query ? `?${query}` : ''}`)
+}
+
+export async function getArticleGenerationEta(): Promise<ArticleGenerationEtaPayload> {
+  return apiFetch<ArticleGenerationEtaPayload>('/search/eta')
 }
 
 export function streamOrder(args: {

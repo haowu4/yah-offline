@@ -1,10 +1,10 @@
-import { MarkdownPreview } from '@ootc/markdown'
+import { CodeBlock, MarkdownPreview } from '@ootc/markdown'
 import { useEffect, useState } from 'react'
 import { FiRefreshCw } from 'react-icons/fi'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useI18n } from '../i18n/useI18n'
 import type { ApiArticleDetail } from '../lib/api/search'
-import { createOrder, getArticleBySlug, isResourceLockedError, streamOrder } from '../lib/api/search'
+import { createOrder, getArticleBySlug, getArticleGenerationEta, isResourceLockedError, streamOrder } from '../lib/api/search'
 import styles from './ArticlePage.module.css'
 import '@ootc/markdown/style.css';
 
@@ -14,12 +14,25 @@ type LoadState = {
   payload: ApiArticleDetail | null
 }
 
+const DEFAULT_ARTICLE_ETA_MS = 8000
+
+function formatDurationShort(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`
+  return `${seconds}s`
+}
+
 export function ArticlePage() {
   const { t, locale } = useI18n()
   const navigate = useNavigate()
   const params = useParams()
   const [searchParams] = useSearchParams()
   const [isRegenerating, setIsRegenerating] = useState(false)
+  const [etaAverageMs, setEtaAverageMs] = useState<number>(DEFAULT_ARTICLE_ETA_MS)
+  const [etaEnabled, setEtaEnabled] = useState(true)
+  const [regenElapsedMs, setRegenElapsedMs] = useState(0)
   const [state, setState] = useState<LoadState>({
     isLoading: true,
     error: null,
@@ -33,6 +46,42 @@ export function ArticlePage() {
   useEffect(() => {
     document.title = state.payload?.article.title ? `${state.payload.article.title} | yah` : t('article.page.title')
   }, [state.payload?.article.title, t])
+
+  useEffect(() => {
+    let cancelled = false
+    void getArticleGenerationEta()
+      .then((payload) => {
+        if (cancelled) return
+        setEtaEnabled(payload.enabled)
+        if (typeof payload.averageDurationMs === 'number' && payload.averageDurationMs > 0) {
+          setEtaAverageMs(payload.averageDurationMs)
+        } else {
+          setEtaAverageMs(DEFAULT_ARTICLE_ETA_MS)
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        setEtaEnabled(true)
+        setEtaAverageMs(DEFAULT_ARTICLE_ETA_MS)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isRegenerating) {
+      setRegenElapsedMs(0)
+      return
+    }
+    const startedAt = Date.now()
+    const timer = setInterval(() => {
+      setRegenElapsedMs(Date.now() - startedAt)
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [isRegenerating])
 
   useEffect(() => {
     if (!slug) {
@@ -74,6 +123,9 @@ export function ArticlePage() {
   }
 
   const { article, query, relatedIntents } = state.payload
+  const filetype = (article.filetype || 'md').toLowerCase()
+  const isMarkdown = filetype === 'md' || filetype === 'markdown'
+  const codeLanguage = filetype === 'bash' || filetype === 'zsh' ? 'sh' : filetype
   const backToResultsHref = query
     ? `/search?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`
     : '/search'
@@ -89,6 +141,22 @@ export function ArticlePage() {
       minute: '2-digit',
     }).format(parsed)
   })()
+  const typicalTotalMs = etaEnabled ? etaAverageMs : null
+  const etaMs = typicalTotalMs !== null ? Math.max(0, typicalTotalMs - regenElapsedMs) : null
+  const overrunMs = typicalTotalMs !== null && regenElapsedMs > typicalTotalMs ? regenElapsedMs - typicalTotalMs : null
+  const regenTimingLabel = isRegenerating
+    ? [
+        t('search.status.elapsed', { value: formatDurationShort(regenElapsedMs) }),
+        typicalTotalMs !== null ? t('search.status.typicalTotal', { value: formatDurationShort(typicalTotalMs) }) : null,
+        overrunMs !== null
+          ? t('search.status.longerThanUsual', { value: formatDurationShort(overrunMs) })
+          : etaMs !== null
+            ? t('search.status.eta', { value: formatDurationShort(etaMs) })
+            : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : null
 
   const regenerateArticle = async () => {
     if (!query || !state.payload?.intent || isRegenerating) return
@@ -159,6 +227,7 @@ export function ArticlePage() {
       <main className={styles.main}>
         <div className={styles.mainHeader}>
           <div className={styles.headerMeta}>
+            <h1 className={styles.articleTitle}>{article.title}</h1>
             <div className={styles.backRow}>
               <Link to={backToResultsHref}>{t('article.back.results')}</Link>
             </div>
@@ -172,18 +241,25 @@ export function ArticlePage() {
             ) : null}
           </div>
           {canRegenerate ? (
-            <button
-              type="button"
-              className={styles.regenerateButton}
-              onClick={() => void regenerateArticle()}
-              disabled={isRegenerating}
-            >
-              <FiRefreshCw className={isRegenerating ? styles.regenerateIconSpinning : styles.regenerateIcon} aria-hidden />
-              <span>{isRegenerating ? t('article.action.regenerating') : t('article.action.regenerate')}</span>
-            </button>
+            <div className={styles.regenerateWrap}>
+              <button
+                type="button"
+                className={styles.regenerateButton}
+                onClick={() => void regenerateArticle()}
+                disabled={isRegenerating}
+              >
+                <FiRefreshCw className={isRegenerating ? styles.regenerateIconSpinning : styles.regenerateIcon} aria-hidden />
+                <span>{isRegenerating ? t('article.action.regenerating') : t('article.action.regenerate')}</span>
+              </button>
+              {regenTimingLabel ? <p className={styles.regenerateMeta}>{regenTimingLabel}</p> : null}
+            </div>
           ) : null}
         </div>
-        <MarkdownPreview content={article.content} />
+        {isMarkdown ? (
+          <MarkdownPreview content={article.content} />
+        ) : (
+          <CodeBlock code={article.content} language={codeLanguage} />
+        )}
       </main>
 
       <aside className={styles.sidebar}>
@@ -198,11 +274,21 @@ export function ArticlePage() {
 
         {query ? (
           <>
-            <h3>{t('article.related.intents')}</h3>
+            <h3>{t('article.related.topics')}</h3>
             {relatedIntents.length === 0 ? <p>{t('article.related.none')}</p> : null}
             <ul className={styles.sidebarList}>
               {relatedIntents.map((intent) => (
-                <li key={intent.id}>{intent.intent}</li>
+                <li key={intent.id}>
+                  {intent.articleSlug ? (
+                    <Link
+                      to={`/content/${encodeURIComponent(intent.articleSlug)}?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`}
+                    >
+                      {intent.intent}
+                    </Link>
+                  ) : (
+                    <span>{intent.intent}</span>
+                  )}
+                </li>
               ))}
             </ul>
           </>

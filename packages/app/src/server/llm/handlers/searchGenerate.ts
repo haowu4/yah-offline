@@ -4,6 +4,7 @@ import { AbstractMagicApi } from "../../../magic/api.js"
 import { GenerationOrderRecord } from "../../../type/order.js"
 import { EventDispatcher } from "../eventDispatcher.js"
 import { LLMRuntimeConfigCache } from "../runtimeConfigCache.js"
+import { parseFiletypeOperators } from "../../search/queryOperators.js"
 
 async function withTimeout<T>(run: () => Promise<T>, timeoutMs: number): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
@@ -47,16 +48,20 @@ export function createSearchGenerateHandler(args: {
     intentId?: number
     orderId: number
     run: () => Promise<T>
-  }): Promise<T> => {
+  }): Promise<{ result: T; attempt: number; durationMs: number }> => {
     const runtimeConfig = args.runtimeConfigCache.get()
     let lastError: unknown = null
+    let attemptsMade = 0
+    let lastDurationMs = 0
 
     for (let attempt = 1; attempt <= runtimeConfig.llmRetryMaxAttempts; attempt += 1) {
       const callId = createCallId()
+      attemptsMade = attempt
       const startMs = Date.now()
       try {
         const result = await withTimeout(callArgs.run, runtimeConfig.llmRequestTimeoutMs)
         const durationMs = Date.now() - startMs
+        lastDurationMs = durationMs
         logLine(
           "info",
           `LLM search ${callArgs.trigger} query="${ellipsis40(callArgs.query)}"${callArgs.intent ? ` intent="${ellipsis40(callArgs.intent)}"` : ""} provider=${args.magicApi.providerName({})} ok ${durationMs}ms attempt=${attempt} cid=${callId}`
@@ -75,10 +80,11 @@ export function createSearchGenerateHandler(args: {
           timeoutMs: runtimeConfig.llmRequestTimeoutMs,
           callId,
         })
-        return result
+        return { result, attempt, durationMs }
       } catch (error) {
         lastError = error
         const durationMs = Date.now() - startMs
+        lastDurationMs = durationMs
         const details = errorDetails(error)
         const storedDetails = errorStorageDetails(error)
         const isTimeout = details.errorMessage.includes("timed out")
@@ -143,8 +149,10 @@ export function createSearchGenerateHandler(args: {
         })
       }
     }
-
-    throw lastError instanceof Error ? lastError : new Error("Search generation failed")
+    const wrapped = lastError instanceof Error ? lastError : new Error("Search generation failed")
+    ;(wrapped as Error & { llmAttempts?: number; llmDurationMs?: number }).llmAttempts = attemptsMade
+    ;(wrapped as Error & { llmDurationMs?: number }).llmDurationMs = lastDurationMs
+    throw wrapped
   }
 
   return async (order) => {
@@ -152,6 +160,9 @@ export function createSearchGenerateHandler(args: {
     if (!query) {
       throw new Error("Query not found")
     }
+    const parsedQuery = parseFiletypeOperators(query.value)
+    const cleanQuery = parsedQuery.cleanQuery || query.value.trim()
+    const queryFiletype = parsedQuery.filetype || "md"
 
     if (order.kind === "query_full") {
       const queryLock = searchDB.tryAcquireLock({
@@ -193,7 +204,7 @@ export function createSearchGenerateHandler(args: {
     })
 
     try {
-      let intentRecords: Array<{ id: number; intent: string }> = []
+      let intentRecords: Array<{ id: number; intent: string; filetype: string }> = []
 
       if (order.kind === "query_full") {
         searchDB.clearQueryIntentLinks(order.queryId)
@@ -210,19 +221,20 @@ export function createSearchGenerateHandler(args: {
 
         const intentResult = await callWithRetry({
           trigger: "intent-generation",
-          query: query.value,
+          query: cleanQuery,
           queryId: order.queryId,
           orderId: order.id,
           run: () =>
             args.magicApi.resolveIntent({
-              query: query.value,
+              query: cleanQuery,
               language: query.language,
+              filetype: queryFiletype,
             }),
         })
 
-        const intents = intentResult.intents.length > 0 ? intentResult.intents : [query.value]
+        const intents = intentResult.result.intents.length > 0 ? intentResult.result.intents : [cleanQuery]
         intentRecords = intents.map((intentCandidate) => {
-          const intent = searchDB.upsertIntent(order.queryId, intentCandidate)
+          const intent = searchDB.upsertIntent(order.queryId, intentCandidate, queryFiletype)
           args.eventDispatcher.emit({
             orderId: order.id,
             event: {
@@ -235,14 +247,14 @@ export function createSearchGenerateHandler(args: {
               },
             },
           })
-          return { id: intent.id, intent: intent.intent }
+          return { id: intent.id, intent: intent.intent, filetype: intent.filetype }
         })
       } else if (order.intentId) {
         const found = searchDB.listIntentsByQueryId(order.queryId).find((item) => item.id === order.intentId)
         if (!found) {
           throw new Error("Target intent not found for query")
         }
-        intentRecords = [{ id: found.id, intent: found.intent }]
+        intentRecords = [{ id: found.id, intent: found.intent, filetype: found.filetype }]
       } else {
         throw new Error("intent_id is required for this order kind")
       }
@@ -269,31 +281,70 @@ export function createSearchGenerateHandler(args: {
           },
         })
 
-        const articleResult = await callWithRetry({
-          trigger: "article-generation",
-          query: query.value,
-          intent: intentRecord.intent,
+        const runId = searchDB.createArticleGenerationRun({
           queryId: order.queryId,
           intentId: intentRecord.id,
           orderId: order.id,
-          run: () =>
-            args.magicApi.createArticle({
-              query: query.value,
-              intent: intentRecord.intent,
-              language: query.language,
-            }),
         })
+        const articleStartMs = Date.now()
+        let article: ReturnType<typeof searchDB.createArticle> | null = null
+        let llmAttempt = 0
+        let llmDurationMs = 0
 
-        const shouldKeepTitle = order.kind === "article_regen_keep_title" || payload.keepTitle === true
-        const article = searchDB.createArticle({
-          intentId: intentRecord.id,
-          title: articleResult.article.title,
-          slug: articleResult.article.slug,
-          content: articleResult.article.content,
-          generatedBy: articleResult.article.generatedBy,
-          replaceExistingForIntent: true,
-          keepTitleWhenReplacing: shouldKeepTitle,
-        })
+        try {
+          const articleResult = await callWithRetry({
+            trigger: "article-generation",
+            query: cleanQuery,
+            intent: intentRecord.intent,
+            queryId: order.queryId,
+            intentId: intentRecord.id,
+            orderId: order.id,
+            run: () =>
+              args.magicApi.createArticle({
+                query: cleanQuery,
+                intent: intentRecord.intent,
+                language: query.language,
+                filetype: intentRecord.filetype,
+              }),
+          })
+          llmAttempt = articleResult.attempt
+          llmDurationMs = articleResult.durationMs
+
+          const shouldKeepTitle = order.kind === "article_regen_keep_title" || payload.keepTitle === true
+          article = searchDB.createArticle({
+            intentId: intentRecord.id,
+            title: articleResult.result.article.title,
+            slug: articleResult.result.article.slug,
+            filetype: intentRecord.filetype,
+            content: articleResult.result.article.content,
+            generatedBy: articleResult.result.article.generatedBy,
+            replaceExistingForIntent: order.kind !== "query_full",
+            keepTitleWhenReplacing: shouldKeepTitle,
+          })
+
+          searchDB.completeArticleGenerationRun({
+            runId,
+            articleId: article.id,
+            attempts: llmAttempt,
+            durationMs: Date.now() - articleStartMs,
+            llmDurationMs,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Article generation failed"
+          const attempts = (error as { llmAttempts?: number } | null)?.llmAttempts ?? Math.max(1, llmAttempt)
+          const lastLlmDurationMs = (error as { llmDurationMs?: number } | null)?.llmDurationMs ?? llmDurationMs
+          searchDB.failArticleGenerationRun({
+            runId,
+            attempts,
+            durationMs: Date.now() - articleStartMs,
+            llmDurationMs: lastLlmDurationMs || null,
+            errorMessage,
+          })
+          throw error
+        }
+        if (!article) {
+          throw new Error("Article creation did not produce a record")
+        }
 
         const queryResult = searchDB.getQueryResult(order.queryId)
         const snippet = queryResult?.intents

@@ -10,6 +10,7 @@ export type QueryIntentRecord = {
     id: number
     queryId: number
     intent: string
+    filetype: string
 }
 
 export type ArticleRecord = {
@@ -17,18 +18,20 @@ export type ArticleRecord = {
     intentId: number | null
     title: string
     slug: string
+    filetype: string
     content: string
     generatedBy: string | null
     createdAt: string
 }
 
-export type ArticleSummary = Pick<ArticleRecord, "id" | "title" | "slug" | "generatedBy" | "createdAt"> & {
+export type ArticleSummary = Pick<ArticleRecord, "id" | "title" | "slug" | "filetype" | "generatedBy" | "createdAt"> & {
     snippet: string
 }
 
 export type QueryIntentWithArticles = {
     id: number
     intent: string
+    filetype: string
     articles: ArticleSummary[]
 }
 
@@ -41,7 +44,7 @@ export type ArticleDetailPayload = {
     article: ArticleRecord
     intent?: QueryIntentRecord
     query?: QueryRecord
-    relatedIntents: Array<Pick<QueryIntentRecord, "id" | "intent">>
+    relatedIntents: Array<Pick<QueryIntentRecord, "id" | "intent" | "filetype"> & { articleSlug: string | null }>
 }
 
 export type SearchStreamIntentCreatedEvent = {

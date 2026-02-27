@@ -189,8 +189,9 @@ export class SearchDBClient {
             .run(sourceText, args.language, correctedText, args.provider)
     }
 
-    upsertIntent(queryId: number, intent: string): QueryIntentRecord {
+    upsertIntent(queryId: number, intent: string, filetype: string): QueryIntentRecord {
         const normalizedIntent = intent.trim()
+        const normalizedFiletype = filetype.trim().toLowerCase() || "md"
         if (!normalizedIntent) {
             throw new Error("Intent cannot be empty")
         }
@@ -198,23 +199,23 @@ export class SearchDBClient {
         this.db
             .prepare(
                 `
-                INSERT INTO query_intent (intent)
-                VALUES (?)
-                ON CONFLICT(intent) DO NOTHING
+                INSERT INTO query_intent (intent, filetype)
+                VALUES (?, ?)
+                ON CONFLICT(intent, filetype) DO NOTHING
                 `
             )
-            .run(normalizedIntent)
+            .run(normalizedIntent, normalizedFiletype)
 
         const row = this.db
             .prepare(
                 `
-                SELECT id, intent
+                SELECT id, intent, filetype
                 FROM query_intent
-                WHERE intent = ?
+                WHERE intent = ? AND filetype = ?
                 `
             )
-            .get(normalizedIntent) as
-            | { id: number; intent: string }
+            .get(normalizedIntent, normalizedFiletype) as
+            | { id: number; intent: string; filetype: string }
             | undefined
 
         if (!row) {
@@ -235,6 +236,7 @@ export class SearchDBClient {
             id: row.id,
             queryId,
             intent: row.intent,
+            filetype: row.filetype,
         }
     }
 
@@ -242,19 +244,20 @@ export class SearchDBClient {
         const rows = this.db
             .prepare(
                 `
-                SELECT qi.id, qi.intent
+                SELECT qi.id, qi.intent, qi.filetype
                 FROM query_query_intent qqi
                 JOIN query_intent qi ON qi.id = qqi.intent_id
                 WHERE qqi.query_id = ?
                 ORDER BY qi.id ASC
                 `
             )
-            .all(queryId) as Array<{ id: number; intent: string }>
+            .all(queryId) as Array<{ id: number; intent: string; filetype: string }>
 
         return rows.map((row) => ({
             id: row.id,
             queryId,
             intent: row.intent,
+            filetype: row.filetype,
         }))
     }
 
@@ -262,18 +265,19 @@ export class SearchDBClient {
         const row = this.db
             .prepare(
                 `
-                SELECT id, intent
+                SELECT id, intent, filetype
                 FROM query_intent
                 WHERE id = ?
                 `
             )
-            .get(intentId) as { id: number; intent: string } | undefined
+            .get(intentId) as { id: number; intent: string; filetype: string } | undefined
 
         if (!row) return null
         return {
             id: row.id,
             queryId: -1,
             intent: row.intent,
+            filetype: row.filetype,
         }
     }
 
@@ -330,9 +334,13 @@ export class SearchDBClient {
         const normalizedBase = baseSlug.trim() || "untitled"
         if (!this.slugExists(normalizedBase, excludeArticleId)) return normalizedBase
 
+        const extMatch = normalizedBase.match(/^(.*?)(\.[a-z0-9_-]+)$/i)
+        const stem = extMatch ? extMatch[1] : normalizedBase
+        const ext = extMatch ? extMatch[2] : ""
+
         let index = 2
         while (true) {
-            const candidate = `${normalizedBase}-${index}`
+            const candidate = `${stem}-${index}${ext}`
             if (!this.slugExists(candidate, excludeArticleId)) return candidate
             index += 1
         }
@@ -342,6 +350,7 @@ export class SearchDBClient {
         intentId?: number | null
         title: string
         slug: string
+        filetype: string
         content: string
         generatedBy?: string | null
         replaceExistingForIntent?: boolean
@@ -376,22 +385,29 @@ export class SearchDBClient {
                             .prepare(
                                 `
                                 UPDATE article
-                                SET content = ?, generated_by = ?
+                                SET content = ?, filetype = ?, generated_by = ?
                                 WHERE id = ?
                                 `
                             )
-                            .run(content, args.generatedBy?.trim() || null, existing.id)
+                            .run(content, args.filetype.trim().toLowerCase() || "md", args.generatedBy?.trim() || null, existing.id)
                     } else {
                         const uniqueSlug = this.getUniqueSlug(args.slug, existing.id)
                         this.db
                             .prepare(
                                 `
                                 UPDATE article
-                                SET title = ?, slug = ?, content = ?, generated_by = ?
+                                SET title = ?, slug = ?, filetype = ?, content = ?, generated_by = ?
                                 WHERE id = ?
                                 `
                             )
-                            .run(title, uniqueSlug, content, args.generatedBy?.trim() || null, existing.id)
+                            .run(
+                                title,
+                                uniqueSlug,
+                                args.filetype.trim().toLowerCase() || "md",
+                                content,
+                                args.generatedBy?.trim() || null,
+                                existing.id
+                            )
                     }
                 }
                 return this.getArticleById(existing.id)
@@ -409,11 +425,17 @@ export class SearchDBClient {
         const result = this.db
             .prepare(
                 `
-                INSERT INTO article (title, slug, content, generated_by)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO article (title, slug, filetype, content, generated_by)
+                VALUES (?, ?, ?, ?, ?)
                 `
             )
-            .run(title, uniqueSlug, content, args.generatedBy?.trim() || null)
+            .run(
+                title,
+                uniqueSlug,
+                args.filetype.trim().toLowerCase() || "md",
+                content,
+                args.generatedBy?.trim() || null
+            )
 
         const articleId = result.lastInsertRowid as number
         if (intentId !== null) {
@@ -452,6 +474,7 @@ export class SearchDBClient {
                     a.id,
                     a.title,
                     a.slug,
+                    a.filetype,
                     a.content,
                     a.generated_by,
                     a.created_at,
@@ -472,6 +495,7 @@ export class SearchDBClient {
                   intent_id: number | null
                   title: string
                   slug: string
+                  filetype: string
                   content: string
                   generated_by: string | null
                   created_at: string
@@ -487,6 +511,7 @@ export class SearchDBClient {
             intentId: row.intent_id,
             title: row.title,
             slug: row.slug,
+            filetype: row.filetype,
             content: row.content,
             generatedBy: row.generated_by,
             createdAt: row.created_at,
@@ -502,7 +527,7 @@ export class SearchDBClient {
             const articleRows = this.db
                 .prepare(
                     `
-                    SELECT a.id, a.title, a.slug, a.content, a.generated_by, a.created_at
+                    SELECT a.id, a.title, a.slug, a.filetype, a.content, a.generated_by, a.created_at
                     FROM query_intent_article qia
                     JOIN article a ON a.id = qia.article_id
                     WHERE qia.intent_id = ?
@@ -513,6 +538,7 @@ export class SearchDBClient {
                 id: number
                 title: string
                 slug: string
+                filetype: string
                 content: string
                 generated_by: string | null
                 created_at: string
@@ -521,10 +547,12 @@ export class SearchDBClient {
             return {
                 id: intentRow.id,
                 intent: intentRow.intent,
+                filetype: intentRow.filetype,
                 articles: articleRows.map((article) => ({
                     id: article.id,
                     title: article.title,
                     slug: article.slug,
+                    filetype: article.filetype,
                     snippet: this.toSnippet(article.content),
                     generatedBy: article.generated_by,
                     createdAt: article.created_at,
@@ -543,7 +571,7 @@ export class SearchDBClient {
             .prepare(
                 `
                 WITH article_target AS (
-                    SELECT a.id, a.title, a.slug, a.content, a.generated_by, a.created_at
+                    SELECT a.id, a.title, a.slug, a.filetype, a.content, a.generated_by, a.created_at
                     FROM article a
                     WHERE a.slug = ?
                     LIMIT 1
@@ -552,6 +580,7 @@ export class SearchDBClient {
                     SELECT
                         qi.id AS intent_id,
                         qi.intent AS intent_value,
+                        qi.filetype AS intent_filetype,
                         qqi.query_id AS query_id
                     FROM article_target at
                     JOIN query_intent_article qia ON qia.article_id = at.id
@@ -564,11 +593,13 @@ export class SearchDBClient {
                     at.id AS article_id,
                     at.title AS article_title,
                     at.slug AS article_slug,
+                    at.filetype AS article_filetype,
                     at.content AS article_content,
                     at.generated_by AS article_generated_by,
                     at.created_at AS article_created_at,
                     pl.intent_id AS intent_id,
                     pl.intent_value AS intent_value,
+                    pl.intent_filetype AS intent_filetype,
                     pl.query_id AS query_id,
                     q.value AS query_value,
                     q.language AS query_language,
@@ -584,11 +615,13 @@ export class SearchDBClient {
                   article_id: number
                   article_title: string
                   article_slug: string
+                  article_filetype: string
                   article_content: string
                   article_generated_by: string | null
                   article_created_at: string
                   intent_id: number | null
                   intent_value: string | null
+                  intent_filetype: string | null
                   query_id: number | null
                   query_value: string | null
                   query_language: string | null
@@ -604,7 +637,18 @@ export class SearchDBClient {
                 ? (this.db
                       .prepare(
                           `
-                          SELECT qi.id, qi.intent
+                          SELECT
+                              qi.id,
+                              qi.intent,
+                              qi.filetype,
+                              (
+                                  SELECT a.slug
+                                  FROM query_intent_article qia2
+                                  JOIN article a ON a.id = qia2.article_id
+                                  WHERE qia2.intent_id = qi.id
+                                  ORDER BY a.id ASC
+                                  LIMIT 1
+                              ) AS article_slug
                           FROM query_query_intent qqi
                           JOIN query_intent qi ON qi.id = qqi.intent_id
                           WHERE qqi.query_id = ? AND qi.id != ?
@@ -614,6 +658,8 @@ export class SearchDBClient {
                       .all(row.query_id, row.intent_id) as Array<{
                       id: number
                       intent: string
+                      filetype: string
+                      article_slug: string | null
                   }>)
                 : []
 
@@ -623,6 +669,7 @@ export class SearchDBClient {
                 intentId: row.intent_id,
                 title: row.article_title,
                 slug: row.article_slug,
+                filetype: row.article_filetype,
                 content: row.article_content,
                 generatedBy: row.article_generated_by,
                 createdAt: row.article_created_at,
@@ -630,14 +677,17 @@ export class SearchDBClient {
             relatedIntents: relatedRows.map((relatedRow) => ({
                 id: relatedRow.id,
                 intent: relatedRow.intent,
+                filetype: relatedRow.filetype,
+                articleSlug: relatedRow.article_slug,
             })),
         }
 
-        if (row.intent_id !== null && row.query_id !== null && row.intent_value !== null) {
+        if (row.intent_id !== null && row.query_id !== null && row.intent_value !== null && row.intent_filetype !== null) {
             payload.intent = {
                 id: row.intent_id,
                 queryId: row.query_id,
                 intent: row.intent_value,
+                filetype: row.intent_filetype,
             }
         }
 
@@ -1158,6 +1208,221 @@ export class SearchDBClient {
             metaJson: row.meta_json,
             createdAt: row.created_at,
         }))
+    }
+
+    getArticleGenerationDurationStats(args: {
+        sampleSize: number
+    }): {
+        averageDurationMs: number | null
+        sampleCount: number
+    } {
+        const sampleSize = Number.isInteger(args.sampleSize) && args.sampleSize > 0
+            ? Math.min(args.sampleSize, 500)
+            : 20
+        const row = this.db
+            .prepare(
+                `
+                SELECT
+                    COUNT(*) AS sample_count,
+                    AVG(duration_ms) AS avg_duration_ms
+                FROM (
+                    SELECT duration_ms
+                    FROM article_generation_run
+                    WHERE status = 'completed' AND duration_ms IS NOT NULL
+                    ORDER BY id DESC
+                    LIMIT ?
+                ) recent
+                `
+            )
+            .get(sampleSize) as { sample_count: number; avg_duration_ms: number | null } | undefined
+
+        if (!row || row.sample_count <= 0 || row.avg_duration_ms == null) {
+            return {
+                averageDurationMs: null,
+                sampleCount: 0,
+            }
+        }
+        return {
+            averageDurationMs: Math.round(row.avg_duration_ms),
+            sampleCount: row.sample_count,
+        }
+    }
+
+    createArticleGenerationRun(args: {
+        queryId: number
+        intentId?: number | null
+        orderId: number
+    }): number {
+        const result = this.db
+            .prepare(
+                `
+                INSERT INTO article_generation_run (query_id, intent_id, order_id, status)
+                VALUES (?, ?, ?, 'running')
+                `
+            )
+            .run(args.queryId, args.intentId ?? null, args.orderId)
+        return result.lastInsertRowid as number
+    }
+
+    completeArticleGenerationRun(args: {
+        runId: number
+        articleId: number
+        attempts: number
+        durationMs: number
+        llmDurationMs: number
+    }): void {
+        this.db
+            .prepare(
+                `
+                UPDATE article_generation_run
+                SET status = 'completed',
+                    article_id = ?,
+                    attempts = ?,
+                    duration_ms = ?,
+                    llm_duration_ms = ?,
+                    error_message = NULL,
+                    finished_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE id = ?
+                `
+            )
+            .run(
+                args.articleId,
+                Math.max(1, Math.trunc(args.attempts)),
+                Math.max(0, Math.trunc(args.durationMs)),
+                Math.max(0, Math.trunc(args.llmDurationMs)),
+                args.runId
+            )
+    }
+
+    failArticleGenerationRun(args: {
+        runId: number
+        attempts: number
+        durationMs: number
+        errorMessage: string
+        llmDurationMs?: number | null
+    }): void {
+        this.db
+            .prepare(
+                `
+                UPDATE article_generation_run
+                SET status = 'failed',
+                    attempts = ?,
+                    duration_ms = ?,
+                    llm_duration_ms = ?,
+                    error_message = ?,
+                    finished_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE id = ?
+                `
+            )
+            .run(
+                Math.max(1, Math.trunc(args.attempts)),
+                Math.max(0, Math.trunc(args.durationMs)),
+                args.llmDurationMs == null ? null : Math.max(0, Math.trunc(args.llmDurationMs)),
+                args.errorMessage.trim() || "Article generation failed",
+                args.runId
+            )
+    }
+
+    listArticleGenerationRuns(args?: {
+        limit?: number
+        offset?: number
+        status?: "running" | "completed" | "failed"
+    }): Array<{
+        id: number
+        queryId: number
+        intentId: number | null
+        articleId: number | null
+        orderId: number
+        status: "running" | "completed" | "failed"
+        attempts: number | null
+        durationMs: number | null
+        llmDurationMs: number | null
+        errorMessage: string | null
+        startedAt: string
+        finishedAt: string | null
+        createdAt: string
+        updatedAt: string
+    }> {
+        const limit = args?.limit && args.limit > 0 ? Math.min(args.limit, 500) : 120
+        const offset = args?.offset && args.offset > 0 ? args.offset : 0
+        const status = args?.status || null
+
+        const rows = this.db
+            .prepare(
+                `
+                SELECT
+                    id,
+                    query_id,
+                    intent_id,
+                    article_id,
+                    order_id,
+                    status,
+                    attempts,
+                    duration_ms,
+                    llm_duration_ms,
+                    error_message,
+                    started_at,
+                    finished_at,
+                    created_at,
+                    updated_at
+                FROM article_generation_run
+                WHERE (? IS NULL OR status = ?)
+                ORDER BY id DESC
+                LIMIT ?
+                OFFSET ?
+                `
+            )
+            .all(status, status, limit, offset) as Array<{
+            id: number
+            query_id: number
+            intent_id: number | null
+            article_id: number | null
+            order_id: number
+            status: "running" | "completed" | "failed"
+            attempts: number | null
+            duration_ms: number | null
+            llm_duration_ms: number | null
+            error_message: string | null
+            started_at: string
+            finished_at: string | null
+            created_at: string
+            updated_at: string
+        }>
+
+        return rows.map((row) => ({
+            id: row.id,
+            queryId: row.query_id,
+            intentId: row.intent_id,
+            articleId: row.article_id,
+            orderId: row.order_id,
+            status: row.status,
+            attempts: row.attempts,
+            durationMs: row.duration_ms,
+            llmDurationMs: row.llm_duration_ms,
+            errorMessage: row.error_message,
+            startedAt: row.started_at,
+            finishedAt: row.finished_at,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+        }))
+    }
+
+    countArticleGenerationRuns(args?: {
+        status?: "running" | "completed" | "failed"
+    }): number {
+        const status = args?.status || null
+        const row = this.db
+            .prepare(
+                `
+                SELECT COUNT(*) AS count
+                FROM article_generation_run
+                WHERE (? IS NULL OR status = ?)
+                `
+            )
+            .get(status, status) as { count: number } | undefined
+        return row?.count ?? 0
     }
 
     tryAcquireLock(args: {

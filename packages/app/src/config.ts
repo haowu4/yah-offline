@@ -16,6 +16,7 @@ export type AppConfig = {
 
     server: {
         enableConfigRoutes: boolean // env: YAH_ENABLE_CONFIG_ROUTES default=1
+        serveWebUI: boolean // env: YAH_SERVE_WEB_UI default=1
         host: string // env:  YAH_HOST default=127.0.0.1
         port: number // env:  YAH_HOST default=11111
         docsPath: string // env: YAH_DOCS_PATH default to first existing known docs path
@@ -85,6 +86,10 @@ export async function getAppConfig(): Promise<AppConfig> {
         process.env.YAH_ENABLE_CONFIG_ROUTES,
         true
     )
+    const serveWebUI = parseBoolean(
+        process.env.YAH_SERVE_WEB_UI,
+        true
+    )
     const host = process.env.YAH_HOST || "127.0.0.1"
     const port = parsePort(process.env.YAH_PORT, 11111)
     const magicProvider = parseMagicProvider(process.env.YAH_MAGIC_PROVIDER)
@@ -117,6 +122,7 @@ export async function getAppConfig(): Promise<AppConfig> {
         },
         server: {
             enableConfigRoutes,
+            serveWebUI,
             host,
             port,
             docsPath,

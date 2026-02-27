@@ -26,7 +26,7 @@ export function createServer(appCtx: AppCtx) {
     app.use("/api", createSearchRouter(appCtx, eventDispatcher, magicApi))
 
     const publicPath = appCtx.config.server.publicPath
-    if (publicPath && fs.existsSync(publicPath)) {
+    if (appCtx.config.server.serveWebUI && publicPath && fs.existsSync(publicPath)) {
         app.use(express.static(publicPath))
         app.get("*", (req, res, next) => {
             if (req.path.startsWith("/api/")) {

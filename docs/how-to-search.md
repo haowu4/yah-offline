@@ -1,76 +1,70 @@
 # How To Search
 
-## Search Flow
+## Core Idea
 
-1. Submit a query on `/search`.
-2. Backend resolves intents from the query.
-3. Backend generates one content item per intent.
-4. Frontend streams progress and results.
+yah is strongest when it generates explanations from relatively stable knowledge.
+yah is weaker when the answer depends on rapidly changing real-world data.
 
-## Query Types That Work Best
+The quality of a result is mostly determined by one question:
+is this query about stable concepts, or about live facts?
 
-Core rule:
+## Those Query Choices Work Well
 
-- Good fit: facts and explanations that are relatively stable
-- Poor fit: facts that change frequently (price, schedule, news, policy, rankings)
+- Concept explanations (stable fundamentals)
+  - `insulin resistance explained`: core medical concept, good for high-level understanding
+  - `tcp vs udp differences`: networking fundamentals are stable and structured
+- Reference-style learning content
+  - `laplace transform table`: established math reference, low volatility
+  - `world war i causes`: historical topic with mature source material
+- Technical mechanism breakdowns
+  - `sqlite fts5 bm25 explanation`: implementation concepts are stable enough for useful summaries
+  - `how oauth2 authorization code flow works`: protocol flow is mostly stable and well-documented
+- Format-specific generation (with `filetype:`)
+  - `ubuntu install zsh filetype:sh`: asks for shell-script output for setup steps
+  - `quicksort implementation filetype:py`: asks for Python code output
+  - `study notes about tcp congestion control filetype:md`: asks for markdown notes output
 
-### Good Fit: Stable Knowledge
+Why these tend to work:
+
+- Facts change slowly.
+- The model can focus on explanation quality instead of guessing current numbers.
+
+## Bad Query Choices (For Now)
+
+Currently yah does not have an up-to-date source-of-truth retrieval layer.
+Because of that, time-sensitive queries are risky and can be stale.
+
+- Live prices and market values
+  - `nyc hotel price`: prices change constantly by date and inventory
+  - `btc price`: real-time value query, generation alone is not reliable
+- Schedules and availability
+  - `nba schedule 2028`: schedule data changes and should come from a live source
+  - `flight status ua123`: operational status is live data
+- News and policy
+  - `breaking tech news`: freshness is the core requirement
+  - `current visa policy for country x`: policy can change and needs current official source
+
+What to do for these:
+
+- Use yah to draft structure/checklists/questions.
+- Verify final facts with live authoritative sources.
+
+## Important Warning
+
+AI can generate mistakes even on good query types.
+Always use common sense, especially when the result may affect money, safety, legal decisions, or travel plans.
+
+## Advanced Tricks
+
+### Query Operator: `filetype`
+
+`filetype:` changes output format only.
 
 Examples:
 
-- `what is insulin resistance`
-- `laplace transform table`
-- `how sqlite fts5 bm25 works`
-- `history of world war i causes`
-- `difference between tcp and udp`
-
-### Use With Caution: Mixed Stability
-
-Examples:
-
-- `best hotels in nyc for families`
-- `python best practices`
-- `visa requirements for country X`
-
-Guidance:
-
-- Treat output as a draft
-- Verify important facts with current authoritative sources
-
-### Poor Fit: Time-Sensitive Queries
-
-Examples:
-
-- `nyc hotel price`
-- `nba schedule 2028`
-- stock and crypto prices
-- exchange rates
-- flight status
-- weather
-- breaking news
-- election results
-- current laws/regulations
-
-Why risky:
-
-- Fluent output can still be outdated
-- “Current” facts require live retrieval, not only generation
-
-## Quick Decision Rule
-
-Before trusting generated output, ask:
-
-1. Could this fact change week-to-week or month-to-month?
-2. Would being wrong cause cost, legal, or planning risk?
-3. Does the query include terms like `latest`, `today`, `current`, `price`, `schedule`, `news`?
-
-If yes, do not treat generated output as authoritative.
-
-## `filetype:` Operator
-
-Supported query operator example:
-
-- `ubuntu install zsh filetype:sh`
+- `ubuntu install zsh filetype:sh`: aims to generate a runnable shell script for Ubuntu setup.
+- `quicksort implementation filetype:py`: aims to generate Python source code instead of markdown explanation.
+- `trip checklist filetype:md`: aims to generate a readable markdown checklist document.
 
 Rules:
 
@@ -78,21 +72,3 @@ Rules:
 - Multiple operators return HTTP `400`.
 - Filetype must be in `search.filetype.allowlist`.
 - `filetype:md` explicitly forces markdown output.
-- Non-markdown filetypes generate raw code/text output.
-- `filetype` is applied to both intent resolution and content generation.
-- `filetype:` controls output format, not freshness of facts.
-
-## Result Pages
-
-- Search home/results: `/search`
-- Article/content: `/content/:slug`
-
-Article page supports regeneration and shows related topics with direct links.
-
-## ETA Behavior
-
-- Search and article regeneration show:
-  - elapsed time
-  - typical total
-  - ETA (or longer-than-usual)
-- ETA is derived from recent generation timing logs with configurable sample size.

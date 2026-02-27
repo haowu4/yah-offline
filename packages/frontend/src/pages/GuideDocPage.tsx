@@ -56,11 +56,7 @@ export function GuideDocPage() {
 
       {error ? <p className={styles.error}>{error}</p> : null}
       {isLoading ? <p className={styles.status}>Loading guide...</p> : null}
-      {!isLoading && doc ? (
-        <article className={styles.docBody}>
-          <MarkdownPreview content={doc.markdown} />
-        </article>
-      ) : null}
+      {!isLoading && doc ? <MarkdownPreview content={doc.markdown} /> : null}
     </div>
   )
 }

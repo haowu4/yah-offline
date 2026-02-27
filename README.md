@@ -49,7 +49,6 @@ pnpm -C packages/frontend dev
 - [Config Reference](docs/config-reference.md)
 - [CLI Reference](docs/cli-reference.md)
 - [Observability](docs/observability.md)
-- [Troubleshooting](docs/troubleshooting.md)
 
 ## Notes
 

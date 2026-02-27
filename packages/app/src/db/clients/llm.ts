@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import {
   LLMEventRecord,
+  LLMFailureRecord,
   LLMEventTopic,
   LLMJobKind,
   LLMJobPayloadByKind,
@@ -309,5 +310,118 @@ export class LLMDBClient {
       .run(args.topic, args.entityId)
 
     return result.changes
+  }
+
+  createFailure(args: {
+    provider: string
+    component: string
+    trigger: string
+    model?: string | null
+    queryId?: number | null
+    intentId?: number | null
+    orderId?: number | null
+    queryText?: string | null
+    intentText?: string | null
+    callId?: string | null
+    attempt?: number | null
+    durationMs?: number | null
+    errorName: string
+    errorMessage: string
+    details?: unknown
+  }): number {
+    const result = this.db
+      .prepare(
+        `
+          INSERT INTO llm_failure (
+            provider, component, trigger, model, query_id, intent_id, order_id,
+            query_text, intent_text, call_id, attempt, duration_ms,
+            error_name, error_message, details_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(
+        args.provider.trim() || "unknown",
+        args.component.trim() || "unknown",
+        args.trigger.trim() || "unknown",
+        args.model?.trim() || null,
+        args.queryId ?? null,
+        args.intentId ?? null,
+        args.orderId ?? null,
+        args.queryText?.trim() || null,
+        args.intentText?.trim() || null,
+        args.callId?.trim() || null,
+        args.attempt ?? null,
+        args.durationMs ?? null,
+        args.errorName.trim() || "Error",
+        args.errorMessage.trim() || "Unknown error",
+        JSON.stringify(args.details ?? {})
+      )
+    return result.lastInsertRowid as number
+  }
+
+  listFailures(args?: {
+    limit?: number
+    provider?: string
+    trigger?: string
+    component?: string
+  }): LLMFailureRecord[] {
+    const limit = args?.limit && args.limit > 0 ? Math.min(args.limit, 500) : 100
+    const provider = args?.provider?.trim() || null
+    const trigger = args?.trigger?.trim() || null
+    const component = args?.component?.trim() || null
+
+    const rows = this.db
+      .prepare(
+        `
+          SELECT id, provider, component, trigger, model, query_id, intent_id, order_id,
+                 query_text, intent_text, call_id, attempt, duration_ms,
+                 error_name, error_message, details_json, created_at
+          FROM llm_failure
+          WHERE (? IS NULL OR provider = ?)
+            AND (? IS NULL OR trigger = ?)
+            AND (? IS NULL OR component = ?)
+          ORDER BY id DESC
+          LIMIT ?
+        `
+      )
+      .all(provider, provider, trigger, trigger, component, component, limit) as Array<{
+      id: number
+      provider: string
+      component: string
+      trigger: string
+      model: string | null
+      query_id: number | null
+      intent_id: number | null
+      order_id: number | null
+      query_text: string | null
+      intent_text: string | null
+      call_id: string | null
+      attempt: number | null
+      duration_ms: number | null
+      error_name: string
+      error_message: string
+      details_json: string
+      created_at: string
+    }>
+
+    return rows.map((row) => ({
+      id: row.id,
+      provider: row.provider,
+      component: row.component,
+      trigger: row.trigger,
+      model: row.model,
+      queryId: row.query_id,
+      intentId: row.intent_id,
+      orderId: row.order_id,
+      queryText: row.query_text,
+      intentText: row.intent_text,
+      callId: row.call_id,
+      attempt: row.attempt,
+      durationMs: row.duration_ms,
+      errorName: row.error_name,
+      errorMessage: row.error_message,
+      detailsJson: row.details_json,
+      createdAt: row.created_at,
+    }))
   }
 }

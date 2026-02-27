@@ -82,3 +82,48 @@ export function errorDetails(error: unknown): { errorName: string; errorMessage:
     errorMessage: typeof error === "string" ? error : "Unknown error",
   }
 }
+
+function normalizeForStorage(value: unknown, depth = 0): unknown {
+  if (depth > 6) return "[max-depth]"
+  if (value === null || value === undefined) return value
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
+  if (value instanceof Date) return value.toISOString()
+  if (Array.isArray(value)) return value.map((item) => normalizeForStorage(item, depth + 1))
+  if (typeof value === "object") {
+    const output: Record<string, unknown> = {}
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      output[key] = normalizeForStorage(child, depth + 1)
+    }
+    return output
+  }
+  return String(value)
+}
+
+export function errorStorageDetails(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    const anyError = error as Error & {
+      code?: unknown
+      status?: unknown
+      type?: unknown
+      cause?: unknown
+      llmDetails?: unknown
+      response?: unknown
+      error?: unknown
+    }
+    return {
+      name: error.name || "Error",
+      message: error.message || "Unknown error",
+      code: normalizeForStorage(anyError.code),
+      status: normalizeForStorage(anyError.status),
+      type: normalizeForStorage(anyError.type),
+      cause: normalizeForStorage(anyError.cause),
+      llmDetails: normalizeForStorage(anyError.llmDetails),
+      response: normalizeForStorage(anyError.response),
+      providerError: normalizeForStorage(anyError.error),
+    }
+  }
+
+  return {
+    value: normalizeForStorage(error),
+  }
+}

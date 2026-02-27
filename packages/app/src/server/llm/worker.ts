@@ -17,32 +17,52 @@ export function startLLMWorker(appCtx: AppCtx, eventDispatcher: EventDispatcher)
   })
 
   let stopped = false
-  let isRunning = false
+  const inFlight = new Set<number>()
 
-  const runOnce = async () => {
-    if (stopped || isRunning) return
-    isRunning = true
+  const parsePositiveIntOrDefault = (input: string | null, defaultValue: number): number => {
+    if (!input) return defaultValue
+    const parsed = Number.parseInt(input, 10)
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : defaultValue
+  }
 
+  const getMaxConcurrency = (): number => {
+    const configDB = appCtx.dbClients.config()
+    const raw = configDB.getValue("llm.worker.max_concurrency")
+    return Math.min(parsePositiveIntOrDefault(raw, 3), 16)
+  }
+
+  const processOrder = async (orderId: number) => {
     try {
-      const order = searchDB.claimNextQueuedOrder()
-      if (!order) return
+      const order = searchDB.getGenerationOrderById(orderId)
+      await searchGenerateHandler(order)
+      searchDB.completeGenerationOrder(order.id, {
+        kind: order.kind,
+        queryId: order.queryId,
+        intentId: order.intentId,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown order worker error"
+      searchDB.failGenerationOrder(orderId, message)
+      searchDB.appendGenerationLog({
+        orderId,
+        stage: "order",
+        level: "error",
+        message,
+      })
+    } finally {
+      inFlight.delete(orderId)
+    }
+  }
 
-      try {
-        await searchGenerateHandler(order)
-        searchDB.completeGenerationOrder(order.id, {
-          kind: order.kind,
-          queryId: order.queryId,
-          intentId: order.intentId,
-        })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown order worker error"
-        searchDB.failGenerationOrder(order.id, message)
-        searchDB.appendGenerationLog({
-          orderId: order.id,
-          stage: "order",
-          level: "error",
-          message,
-        })
+  const pump = async () => {
+    if (stopped) return
+    try {
+      const maxConcurrency = getMaxConcurrency()
+      while (!stopped && inFlight.size < maxConcurrency) {
+        const order = searchDB.claimNextQueuedOrder()
+        if (!order) break
+        inFlight.add(order.id)
+        void processOrder(order.id)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown LLM worker fatal error"
@@ -52,14 +72,12 @@ export function startLLMWorker(appCtx: AppCtx, eventDispatcher: EventDispatcher)
         event: "llm.worker.error",
         message,
       })
-    } finally {
-      isRunning = false
     }
   }
 
   const interval = setInterval(() => {
-    void runOnce()
-  }, 500)
+    void pump()
+  }, 300)
 
   return () => {
     stopped = true

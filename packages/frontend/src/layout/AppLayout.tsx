@@ -15,6 +15,8 @@ export function AppLayout() {
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   const isConfigPage = location.pathname.startsWith('/config')
+  const isOrderLogsPage = location.pathname.startsWith('/orders')
+  const isLLMFailuresPage = location.pathname.startsWith('/llm/failures')
 
   const currentSearchInput = (() => {
     if (location.pathname === '/search') {
@@ -30,7 +32,7 @@ export function AppLayout() {
     return ''
   })()
   const shouldShowNavSearch =
-    !isConfigPage && !(location.pathname === '/search' && currentSearchInput.trim() === '')
+    !isConfigPage && !isOrderLogsPage && !isLLMFailuresPage && !(location.pathname === '/search' && currentSearchInput.trim() === '')
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -68,6 +70,16 @@ export function AppLayout() {
   const goToConfig = () => {
     setIsMenuOpen(false)
     navigate('/config')
+  }
+
+  const goToLLMFailures = () => {
+    setIsMenuOpen(false)
+    navigate('/llm/failures')
+  }
+
+  const goToOrderLogs = () => {
+    setIsMenuOpen(false)
+    navigate('/orders')
   }
 
   const brandTo = '/search'
@@ -127,6 +139,26 @@ export function AppLayout() {
                 >
                   <span className={styles.menuItemText}>
                     <span className={styles.menuItemLabel}>{t('layout.menu.config')}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={goToOrderLogs}
+                  className={`${styles.menuItem} ${isOrderLogsPage ? styles.menuItemActive : ''}`}
+                  role="menuitem"
+                >
+                  <span className={styles.menuItemText}>
+                    <span className={styles.menuItemLabel}>{t('layout.menu.orders')}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={goToLLMFailures}
+                  className={`${styles.menuItem} ${isLLMFailuresPage ? styles.menuItemActive : ''}`}
+                  role="menuitem"
+                >
+                  <span className={styles.menuItemText}>
+                    <span className={styles.menuItemLabel}>{t('layout.menu.llmFailures')}</span>
                   </span>
                 </button>
                 <button

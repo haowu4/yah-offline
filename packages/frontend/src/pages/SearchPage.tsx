@@ -26,8 +26,8 @@ export function SearchPage() {
   const [examples, setExamples] = useState<string[]>([])
   const [recent, setRecent] = useState<ApiSearchSuggestionItem[]>([])
   const [isFirstTimeUser, setIsFirstTimeUser] = useState(true)
-  const [rerunMode, setRerunMode] = useState<'query' | 'intents' | 'articles' | null>(null)
-  const [rerunIntentId, setRerunIntentId] = useState<number | null>(null)
+  const [rerunMode, setRerunMode] = useState<'query' | 'intents' | null>(null)
+  const [rerunningIntentIds, setRerunningIntentIds] = useState<number[]>([])
 
   useEffect(() => {
     document.title = queryFromUrl ? t('search.page.title.query', { query: queryFromUrl }) : t('search.page.title')
@@ -204,13 +204,11 @@ export function SearchPage() {
   }
 
   const handleRerunArticle = async (intentId: number) => {
-    setRerunMode('articles')
-    setRerunIntentId(intentId)
+    setRerunningIntentIds((prev) => (prev.includes(intentId) ? prev : [...prev, intentId]))
     try {
       await search.rerunArticleGenerationForIntent(intentId)
     } finally {
-      setRerunMode(null)
-      setRerunIntentId(null)
+      setRerunningIntentIds((prev) => prev.filter((id) => id !== intentId))
     }
   }
 
@@ -234,8 +232,8 @@ export function SearchPage() {
         isFirstTimeUser={isFirstTimeUser}
         isRerunningQuery={rerunMode === 'query'}
         isRerunningIntents={rerunMode === 'intents'}
-        isRerunningArticles={rerunMode === 'articles'}
-        rerunningIntentId={rerunIntentId}
+        isRerunningArticles={rerunningIntentIds.length > 0}
+        rerunningIntentIds={rerunningIntentIds}
         onSearch={handleSearch}
         onSearchOriginal={handleSearchOriginal}
         onRerunQuery={handleRerunQuery}

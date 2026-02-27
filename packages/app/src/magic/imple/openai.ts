@@ -161,16 +161,49 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     user: string
   }): Promise<string> {
     const client = this.refreshClientIfNeeded()
-
-    const chatResponse = await client.chat.completions.create({
+    const requestBodyForLog = {
       model: args.model,
       stream: false,
       messages: [
         { role: "system", content: args.system },
         { role: "user", content: args.user },
       ],
-    })
-    return getChatOutputText(chatResponse)
+    }
+
+    try {
+      const chatResponse = await client.chat.completions.create({
+        model: args.model,
+        stream: false,
+        messages: [
+          { role: "system", content: args.system },
+          { role: "user", content: args.user },
+        ],
+      })
+      return getChatOutputText(chatResponse)
+    } catch (error) {
+      const anyError = error as {
+        name?: string
+        message?: string
+        status?: number
+        code?: string
+        type?: string
+        request_id?: string
+        headers?: unknown
+        error?: unknown
+      }
+      const wrapped = new Error(anyError.message || "OpenAI request failed")
+      wrapped.name = anyError.name || "OpenAIError"
+      ;(wrapped as Error & { llmDetails?: unknown; status?: unknown; code?: unknown; type?: unknown }).llmDetails = {
+        requestBody: requestBodyForLog,
+        responseBody: anyError.error ?? null,
+        responseHeaders: anyError.headers ?? null,
+        requestId: anyError.request_id ?? null,
+      }
+      ;(wrapped as Error & { status?: unknown; code?: unknown; type?: unknown }).status = anyError.status
+      ;(wrapped as Error & { code?: unknown; type?: unknown }).code = anyError.code
+      ;(wrapped as Error & { type?: unknown }).type = anyError.type
+      throw wrapped
+    }
   }
 
   async correctSpelling(args: {

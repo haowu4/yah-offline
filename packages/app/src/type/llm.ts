@@ -46,3 +46,23 @@ export type LLMEventRecord = {
   payloadJson: string
   createdAt: string
 }
+
+export type LLMFailureRecord = {
+  id: number
+  provider: string
+  component: string
+  trigger: string
+  model: string | null
+  queryId: number | null
+  intentId: number | null
+  orderId: number | null
+  queryText: string | null
+  intentText: string | null
+  callId: string | null
+  attempt: number | null
+  durationMs: number | null
+  errorName: string
+  errorMessage: string
+  detailsJson: string
+  createdAt: string
+}

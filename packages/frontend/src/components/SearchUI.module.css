@@ -186,11 +186,42 @@
   background: #f8f9fb;
 }
 
+.debugHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .debugTitle {
   margin: 0 0 4px;
   font-size: 12px;
   font-weight: 700;
   color: #4d5561;
+}
+
+.debugCloseButton {
+  border: 1px solid #d8dee8;
+  background: #fff;
+  color: #5f6773;
+  border-radius: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.debugCloseButton:hover {
+  background: #f3f6fb;
+  color: #1f4fbf;
+}
+
+.debugCloseIcon {
+  width: 13px;
+  height: 13px;
 }
 
 .debugMeta {

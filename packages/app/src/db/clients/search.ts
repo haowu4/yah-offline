@@ -231,6 +231,25 @@ export class SearchDBClient {
         }))
     }
 
+    getIntentById(intentId: number): QueryIntentRecord | null {
+        const row = this.db
+            .prepare(
+                `
+                SELECT id, intent
+                FROM query_intent
+                WHERE id = ?
+                `
+            )
+            .get(intentId) as { id: number; intent: string } | undefined
+
+        if (!row) return null
+        return {
+            id: row.id,
+            queryId: -1,
+            intent: row.intent,
+        }
+    }
+
     private toPlainText(markdown: string): string {
         return markdown
             .replace(/```[\s\S]*?```/g, " ")
@@ -806,6 +825,46 @@ export class SearchDBClient {
 
         if (!row) throw new Error("Generation order not found")
         return this.toGenerationOrder(row)
+    }
+
+    listGenerationOrders(args?: {
+        limit?: number
+        status?: GenerationOrderStatus
+        kind?: GenerationOrderKind
+    }): GenerationOrderRecord[] {
+        const limit = args?.limit && args.limit > 0 ? Math.min(args.limit, 500) : 120
+        const status = args?.status || null
+        const kind = args?.kind || null
+
+        const rows = this.db
+            .prepare(
+                `
+                SELECT id, query_id, kind, intent_id, status, requested_by, request_payload_json,
+                       result_summary_json, error_message, started_at, finished_at, created_at, updated_at
+                FROM generation_order
+                WHERE (? IS NULL OR status = ?)
+                  AND (? IS NULL OR kind = ?)
+                ORDER BY id DESC
+                LIMIT ?
+                `
+            )
+            .all(status, status, kind, kind, limit) as Array<{
+                id: number
+                query_id: number
+                kind: GenerationOrderKind
+                intent_id: number | null
+                status: GenerationOrderStatus
+                requested_by: "user" | "system"
+                request_payload_json: string
+                result_summary_json: string | null
+                error_message: string | null
+                started_at: string | null
+                finished_at: string | null
+                created_at: string
+                updated_at: string
+            }>
+
+        return rows.map((row) => this.toGenerationOrder(row))
     }
 
     listActiveOrdersForScope(args: {

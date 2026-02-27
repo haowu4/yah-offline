@@ -224,6 +224,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     debugEvents: [],
   })
   const teardownRef = useRef<(() => void) | null>(null)
+  const intentStreamTeardownsRef = useRef<Map<number, () => void>>(new Map())
   const requestIdRef = useRef(0)
 
   const beginOrderStream = useCallback((orderId: number, requestId: number) => {
@@ -303,6 +304,10 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     requestIdRef.current += 1
     teardownRef.current?.()
     teardownRef.current = null
+    for (const teardown of intentStreamTeardownsRef.current.values()) {
+      teardown()
+    }
+    intentStreamTeardownsRef.current.clear()
     setState({
       queryId: null,
       activeOrderId: null,
@@ -373,6 +378,10 @@ export function SearchProvider({ children }: { children: ReactNode }) {
 
     teardownRef.current?.()
     teardownRef.current = null
+    for (const teardown of intentStreamTeardownsRef.current.values()) {
+      teardown()
+    }
+    intentStreamTeardownsRef.current.clear()
 
     setState({
       queryId: null,
@@ -482,6 +491,10 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     requestIdRef.current = requestId
     teardownRef.current?.()
     teardownRef.current = null
+    for (const teardown of intentStreamTeardownsRef.current.values()) {
+      teardown()
+    }
+    intentStreamTeardownsRef.current.clear()
 
     setState((prev) => ({
       ...prev,
@@ -503,30 +516,137 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     const queryId = state.queryId
     if (!queryId || !Number.isInteger(intentId) || intentId <= 0) return
 
-    const requestId = requestIdRef.current + 1
-    requestIdRef.current = requestId
-    teardownRef.current?.()
-    teardownRef.current = null
-
     setState((prev) => ({
       ...prev,
-      activeOrderId: null,
-      isLoading: true,
-      error: null,
-      isReplayed: false,
       queryIntents: prev.queryIntents.map((intent) => ({
         ...intent,
-        isLoading: intent.id === intentId,
+        isLoading: intent.id === intentId ? true : intent.isLoading,
       })),
     }))
 
-    await attachOrderStream({
-      requestId,
-      queryId,
-      kind: 'article_regen_keep_title',
-      intentId,
+    let orderId: number
+    try {
+      const created = await createOrder({
+        kind: 'article_regen_keep_title',
+        queryId,
+        intentId,
+      })
+      orderId = created.orderId
+    } catch (error) {
+      if (!isResourceLockedError(error) || typeof error.payload?.activeOrderId !== 'number') {
+        setState((prev) => ({
+          ...prev,
+          error: error instanceof Error ? error.message : 'Failed to create regeneration order',
+          queryIntents: prev.queryIntents.map((intent) => ({
+            ...intent,
+            isLoading: intent.id === intentId ? false : intent.isLoading,
+          })),
+        }))
+        throw error
+      }
+      orderId = error.payload.activeOrderId
+    }
+
+    await new Promise<void>((resolve) => {
+      const existing = intentStreamTeardownsRef.current.get(intentId)
+      if (existing) {
+        existing()
+        intentStreamTeardownsRef.current.delete(intentId)
+      }
+
+      const teardown = streamOrder({
+        orderId,
+        onEvent: (event) => {
+          setState((prev) => {
+            if (event.type === 'order.started') {
+              return {
+                ...prev,
+                debugEvents: appendDebugEvent(prev.debugEvents, `order.started #${event.orderId} kind=${event.kind}`),
+              }
+            }
+
+            if (event.type === 'order.progress') {
+              return {
+                ...prev,
+                debugEvents: appendDebugEvent(prev.debugEvents, `order.progress #${event.orderId} ${event.stage}: ${event.message}`),
+              }
+            }
+
+            if (event.type === 'article.upserted' && event.intentId === intentId) {
+              return {
+                ...prev,
+                debugEvents: appendDebugEvent(prev.debugEvents, `article.upserted #${event.orderId} intent=${event.intentId} article=${event.article.id}`),
+                queryIntents: prev.queryIntents.map((intent) => {
+                  if (intent.id !== intentId) return intent
+                  const exists = intent.articles.some((article) => article.id === event.article.id)
+                  return {
+                    ...intent,
+                    isLoading: false,
+                    articles: exists
+                      ? intent.articles.map((article) => (article.id === event.article.id ? event.article : article))
+                      : [...intent.articles, event.article],
+                  }
+                }),
+              }
+            }
+
+            if (event.type === 'order.completed') {
+              return {
+                ...prev,
+                debugEvents: appendDebugEvent(prev.debugEvents, `order.completed #${event.orderId}`),
+                queryIntents: prev.queryIntents.map((intent) => ({
+                  ...intent,
+                  isLoading: intent.id === intentId ? false : intent.isLoading,
+                })),
+              }
+            }
+
+            if (event.type === 'order.failed') {
+              return {
+                ...prev,
+                error: event.message,
+                debugEvents: appendDebugEvent(prev.debugEvents, `order.failed #${event.orderId}: ${event.message}`),
+                queryIntents: prev.queryIntents.map((intent) => ({
+                  ...intent,
+                  isLoading: intent.id === intentId ? false : intent.isLoading,
+                })),
+              }
+            }
+
+            return prev
+          })
+
+          if (event.type === 'order.completed' || event.type === 'order.failed') {
+            const active = intentStreamTeardownsRef.current.get(intentId)
+            if (active) {
+              active()
+              intentStreamTeardownsRef.current.delete(intentId)
+            }
+            resolve()
+          }
+        },
+        onError: (error) => {
+          setState((prev) => ({
+            ...prev,
+            error: error.message,
+            debugEvents: appendDebugEvent(prev.debugEvents, `stream.error: ${error.message}`),
+            queryIntents: prev.queryIntents.map((intent) => ({
+              ...intent,
+              isLoading: intent.id === intentId ? false : intent.isLoading,
+            })),
+          }))
+          const active = intentStreamTeardownsRef.current.get(intentId)
+          if (active) {
+            active()
+            intentStreamTeardownsRef.current.delete(intentId)
+          }
+          resolve()
+        },
+      })
+
+      intentStreamTeardownsRef.current.set(intentId, teardown)
     })
-  }, [attachOrderStream, state.queryId])
+  }, [state.queryId])
 
   const value = useMemo(
     () => ({

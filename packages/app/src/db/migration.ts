@@ -173,6 +173,32 @@ export const migrations: Migration[] = [
             UNIQUE (scope_type, scope_key)
         );
         CREATE INDEX IF NOT EXISTS idx_generation_lock_owner ON generation_lock(owner_order_id);
+
+        CREATE TABLE IF NOT EXISTS llm_failure (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT NOT NULL,
+            component TEXT NOT NULL,
+            trigger TEXT NOT NULL,
+            model TEXT,
+            query_id INTEGER,
+            intent_id INTEGER,
+            order_id INTEGER,
+            query_text TEXT,
+            intent_text TEXT,
+            call_id TEXT,
+            attempt INTEGER,
+            duration_ms INTEGER,
+            error_name TEXT NOT NULL,
+            error_message TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (query_id) REFERENCES query(id) ON DELETE SET NULL,
+            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE SET NULL,
+            FOREIGN KEY (order_id) REFERENCES generation_order(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_llm_failure_created ON llm_failure(created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_failure_provider_trigger ON llm_failure(provider, trigger, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_llm_failure_order ON llm_failure(order_id, created_at DESC);
         `,
     },
 ]

@@ -1,7 +1,7 @@
 import { Router } from "express"
 import { AppCtx } from "../../appCtx.js"
 import { SearchSuggestionsPayload } from "../../type/search.js"
-import { logDebugJson, logLine, createCallId, ellipsis40, errorDetails } from "../../logging/index.js"
+import { logDebugJson, logLine, createCallId, ellipsis40, errorDetails, errorStorageDetails } from "../../logging/index.js"
 import { EventDispatcher } from "../llm/eventDispatcher.js"
 import { AbstractMagicApi } from "../../magic/api.js"
 import { GenerationOrderEvent, GenerationOrderKind, GenerationOrderRecord } from "../../type/order.js"
@@ -201,6 +201,13 @@ function parseOrderKind(raw: unknown): GenerationOrderKind | null {
   return null
 }
 
+function parseOrderStatus(raw: unknown): "queued" | "running" | "completed" | "failed" | "cancelled" | null {
+  if (raw === "queued" || raw === "running" || raw === "completed" || raw === "failed" || raw === "cancelled") {
+    return raw
+  }
+  return null
+}
+
 function getOrderScope(args: { kind: GenerationOrderKind; queryId: number; intentId: number | null }) {
   if (args.kind === "query_full") {
     return {
@@ -219,6 +226,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
   const router = Router()
   const searchDB = ctx.dbClients.search()
   const configDB = ctx.dbClients.config()
+  const llmDB = ctx.dbClients.llm()
 
   const callMagicWithRetry = async <T>(args: {
     trigger: "spelling-correction"
@@ -244,6 +252,19 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
         lastError = error
         const durationMs = Date.now() - startMs
         const details = errorDetails(error)
+        llmDB.createFailure({
+          provider: magicApi.providerName({}),
+          component: "search.router",
+          trigger: args.trigger,
+          model: configDB.getValue("search.spelling_correction.model"),
+          queryText: args.query,
+          callId,
+          attempt,
+          durationMs,
+          errorName: details.errorName,
+          errorMessage: details.errorMessage,
+          details: errorStorageDetails(error),
+        })
         logLine(
           "error",
           `LLM search ${args.trigger} query="${ellipsis40(args.query)}" provider=${magicApi.providerName({})} error ${durationMs}ms attempt=${attempt} cid=${callId} msg="${details.errorMessage}"`
@@ -434,6 +455,22 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       ? searchDB.listActiveOrdersForScope({ scopeType: "query", queryId })
       : searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId, intentId: intentId ?? undefined })
 
+    if (kind !== "query_full") {
+      const activeQueryOrders = searchDB
+        .listActiveOrdersForScope({ scopeType: "query", queryId })
+        .filter((order) => order.kind === "query_full")
+      if (activeQueryOrders.length > 0) {
+        const activeOrder = activeQueryOrders[0]
+        res.status(409).json({
+          code: "RESOURCE_LOCKED",
+          error: "resource is locked",
+          activeOrderId: activeOrder.id,
+          scope: "query",
+        })
+        return
+      }
+    }
+
     if (activeOrders.length > 0) {
       const activeOrder = activeOrders[0]
       res.status(409).json({
@@ -526,6 +563,30 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     }
   })
 
+  router.get("/orders", (req, res) => {
+    const limitRaw = typeof req.query.limit === "string" ? req.query.limit : null
+    const limit = parsePositiveIntOrDefault(limitRaw, 120)
+    const status = parseOrderStatus(req.query.status)
+    const kind = parseOrderKind(req.query.kind)
+
+    const orders = searchDB.listGenerationOrders({
+      limit,
+      status: status ?? undefined,
+      kind: kind ?? undefined,
+    })
+    res.json({
+      orders: orders.map((order) => {
+        const query = searchDB.getQueryById(order.queryId)
+        const intent = order.intentId ? searchDB.getIntentById(order.intentId) : null
+        return {
+          ...order,
+          query: query ? { id: query.id, value: query.value, language: query.language } : null,
+          intent: intent ? { id: intent.id, value: intent.intent } : null,
+        }
+      }),
+    })
+  })
+
   router.get("/orders/:order_id/logs", (req, res) => {
     const orderId = parseQueryId(req.params.order_id)
     if (!orderId) {
@@ -540,6 +601,22 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     } catch {
       res.status(404).json({ error: "order not found" })
     }
+  })
+
+  router.get("/llm/failures", (req, res) => {
+    const limitRaw = typeof req.query.limit === "string" ? req.query.limit : null
+    const limit = parsePositiveIntOrDefault(limitRaw, 120)
+    const provider = typeof req.query.provider === "string" ? req.query.provider.trim() : ""
+    const trigger = typeof req.query.trigger === "string" ? req.query.trigger.trim() : ""
+    const component = typeof req.query.component === "string" ? req.query.component.trim() : ""
+
+    const failures = llmDB.listFailures({
+      limit,
+      provider: provider || undefined,
+      trigger: trigger || undefined,
+      component: component || undefined,
+    })
+    res.json({ failures })
   })
 
   router.get("/orders/:order_id/stream", (req, res) => {

@@ -1,5 +1,5 @@
 import { AppCtx } from "../../../appCtx.js"
-import { createCallId, ellipsis40, errorDetails, logDebugJson, logLine } from "../../../logging/index.js"
+import { createCallId, ellipsis40, errorDetails, errorStorageDetails, logDebugJson, logLine } from "../../../logging/index.js"
 import { AbstractMagicApi } from "../../../magic/api.js"
 import { GenerationOrderRecord } from "../../../type/order.js"
 import { EventDispatcher } from "../eventDispatcher.js"
@@ -36,11 +36,16 @@ export function createSearchGenerateHandler(args: {
   magicApi: AbstractMagicApi
 }): (order: GenerationOrderRecord) => Promise<void> {
   const searchDB = args.appCtx.dbClients.search()
+  const configDB = args.appCtx.dbClients.config()
+  const llmDB = args.appCtx.dbClients.llm()
 
   const callWithRetry = async <T>(callArgs: {
     trigger: "intent-generation" | "article-generation"
     query: string
     intent?: string
+    queryId: number
+    intentId?: number
+    orderId: number
     run: () => Promise<T>
   }): Promise<T> => {
     const runtimeConfig = args.runtimeConfigCache.get()
@@ -75,6 +80,26 @@ export function createSearchGenerateHandler(args: {
         lastError = error
         const durationMs = Date.now() - startMs
         const details = errorDetails(error)
+        llmDB.createFailure({
+          provider: args.magicApi.providerName({}),
+          component: "search.worker",
+          trigger: callArgs.trigger,
+          model:
+            callArgs.trigger === "intent-generation"
+              ? configDB.getValue("search.intent_resolve.model")
+              : configDB.getValue("search.content_generation.model"),
+          queryId: callArgs.queryId,
+          intentId: callArgs.intentId,
+          orderId: callArgs.orderId,
+          queryText: callArgs.query,
+          intentText: callArgs.intent,
+          callId,
+          attempt,
+          durationMs,
+          errorName: details.errorName,
+          errorMessage: details.errorMessage,
+          details: errorStorageDetails(error),
+        })
         logLine(
           "error",
           `LLM search ${callArgs.trigger} query="${ellipsis40(callArgs.query)}"${callArgs.intent ? ` intent="${ellipsis40(callArgs.intent)}"` : ""} provider=${args.magicApi.providerName({})} error ${durationMs}ms attempt=${attempt} cid=${callId} msg="${details.errorMessage}"`
@@ -108,14 +133,16 @@ export function createSearchGenerateHandler(args: {
       throw new Error("Query not found")
     }
 
-    const queryLock = searchDB.tryAcquireLock({
-      orderId: order.id,
-      scopeType: "query",
-      scopeKey: `query:${order.queryId}`,
-      leaseSeconds: 60,
-    })
-    if (!queryLock.ok) {
-      throw new Error(`Resource locked by order ${queryLock.ownerOrderId}`)
+    if (order.kind === "query_full") {
+      const queryLock = searchDB.tryAcquireLock({
+        orderId: order.id,
+        scopeType: "query",
+        scopeKey: `query:${order.queryId}`,
+        leaseSeconds: 60,
+      })
+      if (!queryLock.ok) {
+        throw new Error(`Resource locked by order ${queryLock.ownerOrderId}`)
+      }
     }
 
     const payload = (() => {
@@ -164,6 +191,8 @@ export function createSearchGenerateHandler(args: {
         const intentResult = await callWithRetry({
           trigger: "intent-generation",
           query: query.value,
+          queryId: order.queryId,
+          orderId: order.id,
           run: () =>
             args.magicApi.resolveIntent({
               query: query.value,
@@ -224,6 +253,9 @@ export function createSearchGenerateHandler(args: {
           trigger: "article-generation",
           query: query.value,
           intent: intentRecord.intent,
+          queryId: order.queryId,
+          intentId: intentRecord.id,
+          orderId: order.id,
           run: () =>
             args.magicApi.createArticle({
               query: query.value,

@@ -1,6 +1,6 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { useState } from 'react'
-import { FiRefreshCw, FiTool } from 'react-icons/fi'
+import { FiRefreshCw, FiTool, FiX } from 'react-icons/fi'
 import { Link } from 'react-router'
 import type { FormEvent } from 'react'
 import type { SearchDebugEvent, SearchIntent } from '../ctx/SearchCtx'
@@ -27,7 +27,7 @@ type SearchUIProps = {
   isRerunningQuery: boolean
   isRerunningIntents: boolean
   isRerunningArticles: boolean
-  rerunningIntentId: number | null
+  rerunningIntentIds: number[]
   onSearch: (query: string) => Promise<void>
   onSearchOriginal: () => Promise<void>
   onRerunQuery: () => Promise<void>
@@ -298,7 +298,17 @@ export function SearchUI(props: SearchUIProps) {
       ) : null}
       {showDebug ? (
         <section className={styles.debugPanel}>
-          <p className={styles.debugTitle}>{t('search.debug.title')}</p>
+          <div className={styles.debugHeader}>
+            <p className={styles.debugTitle}>{t('search.debug.title')}</p>
+            <button
+              type="button"
+              className={styles.debugCloseButton}
+              onClick={() => setShowDebug(false)}
+              aria-label={t('search.debug.hide')}
+            >
+              <FiX className={styles.debugCloseIcon} aria-hidden />
+            </button>
+          </div>
           <p className={styles.debugMeta}>
             {props.activeOrderId
               ? t('search.debug.order', { orderId: String(props.activeOrderId) })
@@ -322,7 +332,7 @@ export function SearchUI(props: SearchUIProps) {
       {hasResults ? (
         <div className={styles.grid}>
           {props.queryIntents.map((intent) => {
-            const isRegenerating = props.rerunningIntentId === intent.id
+            const isRegenerating = props.rerunningIntentIds.includes(intent.id)
 
             return (
               <section key={intent.id} className={styles.intentCard}>
@@ -333,7 +343,7 @@ export function SearchUI(props: SearchUIProps) {
                       <FiTool className={styles.menuTriggerIcon} aria-hidden />
                     </MenuButton>
                     <MenuItems className={styles.menuList}>
-                      <MenuItem disabled={props.isRerunningIntents || props.isRerunningArticles || props.isLoading}>
+                      <MenuItem disabled={props.isRerunningIntents || isRegenerating || props.isLoading}>
                         {({ close, disabled }) => (
                           <button
                             type="button"

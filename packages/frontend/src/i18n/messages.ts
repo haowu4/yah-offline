@@ -45,6 +45,12 @@ const EN: Record<string, string> = {
   'search.action.copyLink': 'Copy link',
   'search.action.copyLink.copied': 'Copied',
   'search.action.more': 'More actions',
+  'search.debug.show': 'Show debug stream',
+  'search.debug.hide': 'Hide debug stream',
+  'search.debug.title': 'Debug stream',
+  'search.debug.order': 'Active order: #{orderId}',
+  'search.debug.orderNone': 'Active order: none',
+  'search.debug.empty': 'No stream events yet.',
   'search.sse.error': 'SSE connection failed',
 
   'config.page.title': 'Config | yah',

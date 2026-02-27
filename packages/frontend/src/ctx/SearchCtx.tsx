@@ -7,7 +7,14 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import { createQuery, rerunArticleForIntent, rerunIntents, streamQuery } from '../lib/api/search'
+import {
+  createOrder,
+  createQuery,
+  getOrderAvailability,
+  getQueryResult,
+  isResourceLockedError,
+  streamOrder,
+} from '../lib/api/search'
 import type { SearchStreamEvent } from '../lib/api/search'
 import styles from './SearchCtx.module.css'
 
@@ -25,8 +32,14 @@ export type SearchIntent = {
   isLoading: boolean
 }
 
+export type SearchDebugEvent = {
+  at: string
+  message: string
+}
+
 export type SearchState = {
   queryId: number | null
+  activeOrderId: number | null
   query: string
   requestedQuery: string
   correctionApplied: boolean
@@ -37,6 +50,7 @@ export type SearchState = {
   isLoading: boolean
   error: string | null
   isReplayed: boolean
+  debugEvents: SearchDebugEvent[]
 }
 
 type SearchContextValue = SearchState & {
@@ -75,8 +89,37 @@ function resolveSearchLanguage(language: string | undefined): string {
   return 'en'
 }
 
+function appendDebugEvent(events: SearchDebugEvent[], message: string): SearchDebugEvent[] {
+  const next = [...events, { at: new Date().toISOString(), message }]
+  if (next.length <= 80) return next
+  return next.slice(next.length - 80)
+}
+
 function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchState {
-  if (event.type === 'intent.created') {
+  if (event.type === 'order.started') {
+    return {
+      ...state,
+      isLoading: true,
+      error: null,
+      activeOrderId: event.orderId,
+      debugEvents: appendDebugEvent(
+        state.debugEvents,
+        `order.started #${event.orderId} kind=${event.kind}`
+      ),
+    }
+  }
+
+  if (event.type === 'order.progress') {
+    return {
+      ...state,
+      debugEvents: appendDebugEvent(
+        state.debugEvents,
+        `order.progress #${event.orderId} ${event.stage}: ${event.message}`
+      ),
+    }
+  }
+
+  if (event.type === 'intent.upserted') {
     const alreadyExists = state.queryIntents.some((intent) => intent.id === event.intent.id)
     if (alreadyExists) {
       return state
@@ -84,6 +127,10 @@ function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchS
 
     return {
       ...state,
+      debugEvents: appendDebugEvent(
+        state.debugEvents,
+        `intent.upserted #${event.orderId} intent=${event.intent.id}`
+      ),
       queryIntents: [
         ...state.queryIntents,
         {
@@ -96,13 +143,13 @@ function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchS
     }
   }
 
-  if (event.type === 'article.created') {
-    if (event.intentId === undefined) {
-      return state
-    }
-
+  if (event.type === 'article.upserted') {
     return {
       ...state,
+      debugEvents: appendDebugEvent(
+        state.debugEvents,
+        `article.upserted #${event.orderId} intent=${event.intentId} article=${event.article.id}`
+      ),
       queryIntents: state.queryIntents.map((intent) => {
         if (intent.id !== event.intentId) return intent
         const exists = intent.articles.some((article) => article.id === event.article.id)
@@ -125,12 +172,14 @@ function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchS
     }
   }
 
-  if (event.type === 'query.completed') {
+  if (event.type === 'order.completed') {
     return {
       ...state,
       isLoading: false,
       error: null,
-      isReplayed: event.replayed,
+      activeOrderId: null,
+      isReplayed: false,
+      debugEvents: appendDebugEvent(state.debugEvents, `order.completed #${event.orderId}`),
       queryIntents: state.queryIntents.map((intent) => ({
         ...intent,
         isLoading: false,
@@ -138,11 +187,16 @@ function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchS
     }
   }
 
-  if (event.type === 'query.error') {
+  if (event.type === 'order.failed') {
     return {
       ...state,
       isLoading: false,
       error: event.message,
+      activeOrderId: null,
+      debugEvents: appendDebugEvent(
+        state.debugEvents,
+        `order.failed #${event.orderId}: ${event.message}`
+      ),
       queryIntents: state.queryIntents.map((intent) => ({
         ...intent,
         isLoading: false,
@@ -156,6 +210,7 @@ function applyStreamEvent(state: SearchState, event: SearchStreamEvent): SearchS
 export function SearchProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SearchState>({
     queryId: null,
+    activeOrderId: null,
     query: '',
     requestedQuery: '',
     correctionApplied: false,
@@ -166,13 +221,14 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     isLoading: false,
     error: null,
     isReplayed: false,
+    debugEvents: [],
   })
   const teardownRef = useRef<(() => void) | null>(null)
   const requestIdRef = useRef(0)
 
-  const beginStream = useCallback((queryId: number, requestId: number) => {
-    teardownRef.current = streamQuery({
-      queryId,
+  const beginOrderStream = useCallback((orderId: number, requestId: number) => {
+    teardownRef.current = streamOrder({
+      orderId,
       onEvent: (event) => {
         if (requestIdRef.current !== requestId) return
         setState((prev) => applyStreamEvent(prev, event))
@@ -183,6 +239,8 @@ export function SearchProvider({ children }: { children: ReactNode }) {
           ...prev,
           isLoading: false,
           error: error.message,
+          activeOrderId: null,
+          debugEvents: appendDebugEvent(prev.debugEvents, `stream.error: ${error.message}`),
           queryIntents: prev.queryIntents.map((intent) => ({
             ...intent,
             isLoading: false,
@@ -192,12 +250,62 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const attachOrderStream = useCallback(
+    async (args: {
+      requestId: number
+      queryId: number
+      kind: 'query_full' | 'article_regen_keep_title'
+      intentId?: number
+    }) => {
+      try {
+        const createdOrder = await createOrder({
+          kind: args.kind,
+          queryId: args.queryId,
+          intentId: args.intentId,
+        })
+        if (requestIdRef.current !== args.requestId) return
+
+        setState((prev) => ({
+          ...prev,
+          activeOrderId: createdOrder.orderId,
+          isLoading: true,
+          error: null,
+          debugEvents: appendDebugEvent(prev.debugEvents, `order.attach #${createdOrder.orderId}`),
+        }))
+
+        beginOrderStream(createdOrder.orderId, args.requestId)
+        return
+      } catch (error) {
+        if (!isResourceLockedError(error)) {
+          throw error
+        }
+
+        const activeOrderId = error.payload?.activeOrderId
+        if (typeof activeOrderId !== 'number') {
+          throw error
+        }
+        if (requestIdRef.current !== args.requestId) return
+
+        setState((prev) => ({
+          ...prev,
+          activeOrderId,
+          isLoading: true,
+          error: null,
+          debugEvents: appendDebugEvent(prev.debugEvents, `order.attach.locked #${activeOrderId}`),
+        }))
+        beginOrderStream(activeOrderId, args.requestId)
+      }
+    },
+    [beginOrderStream]
+  )
+
   const reset = useCallback(() => {
     requestIdRef.current += 1
     teardownRef.current?.()
     teardownRef.current = null
     setState({
       queryId: null,
+      activeOrderId: null,
       query: '',
       requestedQuery: '',
       correctionApplied: false,
@@ -208,6 +316,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       error: null,
       isReplayed: false,
+      debugEvents: [],
     })
   }, [])
 
@@ -224,6 +333,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     }) => {
       setState({
         queryId: args.queryId,
+        activeOrderId: null,
         query: args.query,
         requestedQuery: args.query,
         correctionApplied: false,
@@ -239,6 +349,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         isLoading: false,
         error: null,
         isReplayed: true,
+        debugEvents: [],
       })
     },
     []
@@ -265,6 +376,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
 
     setState({
       queryId: null,
+      activeOrderId: null,
       query: queryValue,
       requestedQuery: queryValue,
       correctionApplied: false,
@@ -275,6 +387,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       isLoading: true,
       error: null,
       isReplayed: false,
+      debugEvents: [],
     })
 
     const created = await createQuery({
@@ -287,6 +400,53 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    const queryResult = await getQueryResult(created.queryId)
+    if (requestIdRef.current !== requestId) {
+      return
+    }
+
+    const existingIntents = queryResult.intents.map((intent) => ({
+      id: intent.id,
+      intent: intent.intent,
+      articles: intent.articles,
+      isLoading: false,
+    }))
+
+    const availability = await getOrderAvailability({
+      kind: 'query_full',
+      queryId: created.queryId,
+    })
+    if (requestIdRef.current !== requestId) {
+      return
+    }
+
+    if (!availability.available && typeof availability.activeOrderId === 'number') {
+      setState((prev) => ({
+        ...prev,
+        queryId: created.queryId,
+        activeOrderId: availability.activeOrderId ?? null,
+        query: created.query,
+        requestedQuery: created.originalQuery,
+        correctionApplied: created.correctionApplied,
+        correctedQuery: created.correctedQuery,
+        language: created.language,
+        spellCorrectionMode: created.spellCorrectionMode,
+        queryIntents: existingIntents.map((intent) => ({
+          ...intent,
+          isLoading: intent.articles.length === 0,
+        })),
+        isLoading: true,
+        error: null,
+        isReplayed: false,
+        debugEvents: appendDebugEvent(
+          prev.debugEvents,
+          `order.attach.locked #${availability.activeOrderId}`
+        ),
+      }))
+      beginOrderStream(availability.activeOrderId, requestId)
+      return
+    }
+
     setState((prev) => ({
       ...prev,
       queryId: created.queryId,
@@ -296,10 +456,23 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       correctedQuery: created.correctedQuery,
       language: created.language,
       spellCorrectionMode: created.spellCorrectionMode,
+      queryIntents: existingIntents,
+      isLoading: args.forceRegenerate === true || existingIntents.length === 0,
+      error: null,
+      isReplayed: existingIntents.length > 0 && args.forceRegenerate !== true,
+      debugEvents: [],
     }))
 
-    beginStream(created.queryId, requestId)
-  }, [beginStream])
+    if (existingIntents.length > 0 && args.forceRegenerate !== true) {
+      return
+    }
+
+    await attachOrderStream({
+      requestId,
+      queryId: created.queryId,
+      kind: 'query_full',
+    })
+  }, [attachOrderStream])
 
   const rerunIntentResolve = useCallback(async () => {
     const queryId = state.queryId
@@ -312,16 +485,19 @@ export function SearchProvider({ children }: { children: ReactNode }) {
 
     setState((prev) => ({
       ...prev,
+      activeOrderId: null,
       isLoading: true,
       error: null,
       isReplayed: false,
       queryIntents: [],
     }))
 
-    await rerunIntents(queryId)
-    if (requestIdRef.current !== requestId) return
-    beginStream(queryId, requestId)
-  }, [beginStream, state.queryId])
+    await attachOrderStream({
+      requestId,
+      queryId,
+      kind: 'query_full',
+    })
+  }, [attachOrderStream, state.queryId])
 
   const rerunArticleGenerationForIntent = useCallback(async (intentId: number) => {
     const queryId = state.queryId
@@ -334,6 +510,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
 
     setState((prev) => ({
       ...prev,
+      activeOrderId: null,
       isLoading: true,
       error: null,
       isReplayed: false,
@@ -343,10 +520,13 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       })),
     }))
 
-    await rerunArticleForIntent(queryId, intentId)
-    if (requestIdRef.current !== requestId) return
-    beginStream(queryId, requestId)
-  }, [beginStream, state.queryId])
+    await attachOrderStream({
+      requestId,
+      queryId,
+      kind: 'article_regen_keep_title',
+      intentId,
+    })
+  }, [attachOrderStream, state.queryId])
 
   const value = useMemo(
     () => ({

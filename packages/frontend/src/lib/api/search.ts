@@ -58,9 +58,26 @@ export type ApiArticleDetail = {
   }>
 }
 
+export type GenerationOrderKind = 'query_full' | 'intent_regen' | 'article_regen_keep_title'
+
 export type SearchStreamEvent =
   | {
-      type: 'intent.created'
+      type: 'order.started'
+      orderId: number
+      queryId: number
+      kind: GenerationOrderKind
+      intentId?: number
+    }
+  | {
+      type: 'order.progress'
+      orderId: number
+      queryId: number
+      stage: 'spell' | 'intent' | 'article'
+      message: string
+    }
+  | {
+      type: 'intent.upserted'
+      orderId: number
       queryId: number
       intent: {
         id: number
@@ -68,9 +85,10 @@ export type SearchStreamEvent =
       }
     }
   | {
-      type: 'article.created'
+      type: 'article.upserted'
+      orderId: number
       queryId: number
-      intentId?: number
+      intentId: number
       article: {
         id: number
         title: string
@@ -79,15 +97,36 @@ export type SearchStreamEvent =
       }
     }
   | {
-      type: 'query.completed'
+      type: 'order.completed'
+      orderId: number
       queryId: number
-      replayed: boolean
     }
   | {
-      type: 'query.error'
+      type: 'order.failed'
+      orderId: number
       queryId: number
       message: string
     }
+
+export type ApiErrorPayload = {
+  error?: string
+  code?: string
+  activeOrderId?: number
+  scope?: 'query' | 'intent'
+  [key: string]: unknown
+}
+
+export class ApiError extends Error {
+  status: number
+  payload: ApiErrorPayload | null
+
+  constructor(args: { status: number; message: string; payload: ApiErrorPayload | null }) {
+    super(args.message)
+    this.name = 'ApiError'
+    this.status = args.status
+    this.payload = args.payload
+  }
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
@@ -100,12 +139,41 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
 
+  const rawText = await response.text()
+  const payload = (() => {
+    if (!rawText) return null
+    try {
+      return JSON.parse(rawText) as ApiErrorPayload
+    } catch {
+      return null
+    }
+  })()
+
   if (!response.ok) {
-    const text = await response.text()
-    throw new Error(text || `Request failed: ${response.status}`)
+    const message =
+      (payload && typeof payload.error === 'string' && payload.error) ||
+      rawText ||
+      `Request failed: ${response.status}`
+    throw new ApiError({
+      status: response.status,
+      message,
+      payload,
+    })
   }
 
-  return (await response.json()) as T
+  if (!rawText) {
+    return {} as T
+  }
+  return JSON.parse(rawText) as T
+}
+
+export function isResourceLockedError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.payload?.code === 'RESOURCE_LOCKED' &&
+    typeof error.payload?.activeOrderId === 'number'
+  )
 }
 
 export type CreateQueryResponse = {
@@ -135,32 +203,47 @@ export async function createQuery(args: {
   })
 }
 
-export type RerunQueryResponse = {
+export type CreateOrderResponse = {
+  orderId: number
   queryId: number
-  accepted: boolean
-  mode: 'rerun-intents' | 'rerun-articles'
+  kind: GenerationOrderKind
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 }
 
-export async function rerunIntents(queryId: number): Promise<RerunQueryResponse> {
-  return apiFetch<RerunQueryResponse>(`/query/${queryId}/rerun-intents`, {
+export async function createOrder(args: {
+  kind: GenerationOrderKind
+  queryId: number
+  intentId?: number
+}): Promise<CreateOrderResponse> {
+  return apiFetch<CreateOrderResponse>('/orders', {
     method: 'POST',
+    body: JSON.stringify({
+      kind: args.kind,
+      queryId: args.queryId,
+      intentId: args.intentId,
+    }),
   })
 }
 
-export async function rerunArticles(queryId: number): Promise<RerunQueryResponse> {
-  return apiFetch<RerunQueryResponse>(`/query/${queryId}/rerun-articles`, {
-    method: 'POST',
-  })
+export type OrderAvailabilityResponse = {
+  available: boolean
+  reason: 'ok' | 'locked'
+  activeOrderId?: number
+  scope: 'query' | 'intent'
 }
 
-export type RerunIntentArticleResponse = RerunQueryResponse & {
-  intentId: number
-}
-
-export async function rerunArticleForIntent(queryId: number, intentId: number): Promise<RerunIntentArticleResponse> {
-  return apiFetch<RerunIntentArticleResponse>(`/query/${queryId}/intents/${intentId}/rerun-article`, {
-    method: 'POST',
-  })
+export async function getOrderAvailability(args: {
+  kind: GenerationOrderKind
+  queryId: number
+  intentId?: number
+}): Promise<OrderAvailabilityResponse> {
+  const params = new URLSearchParams()
+  params.set('kind', args.kind)
+  params.set('queryId', String(args.queryId))
+  if (typeof args.intentId === 'number') {
+    params.set('intentId', String(args.intentId))
+  }
+  return apiFetch<OrderAvailabilityResponse>(`/orders/availability?${params.toString()}`)
 }
 
 export async function getQueryResult(queryId: number): Promise<ApiQueryResult> {
@@ -186,39 +269,27 @@ export async function getSearchSuggestions(args?: {
   return apiFetch<ApiSearchSuggestionsPayload>(`/search/suggestions${query ? `?${query}` : ''}`)
 }
 
-export function streamQuery(args: {
-  queryId: number
+export function streamOrder(args: {
+  orderId: number
   onEvent: (event: SearchStreamEvent) => void
   onError: (error: Error) => void
 }): () => void {
-  const source = new EventSource(`${API_BASE}/query/${args.queryId}/stream`)
+  const source = new EventSource(`${API_BASE}/orders/${args.orderId}/stream`)
 
-  const handleIntent = (event: MessageEvent) => {
+  const handleEvent = (event: MessageEvent) => {
     const parsed = JSON.parse(event.data) as SearchStreamEvent
     args.onEvent(parsed)
+    if (parsed.type === 'order.completed' || parsed.type === 'order.failed') {
+      source.close()
+    }
   }
 
-  const handleArticle = (event: MessageEvent) => {
-    const parsed = JSON.parse(event.data) as SearchStreamEvent
-    args.onEvent(parsed)
-  }
-
-  const handleCompleted = (event: MessageEvent) => {
-    const parsed = JSON.parse(event.data) as SearchStreamEvent
-    args.onEvent(parsed)
-    source.close()
-  }
-
-  const handleErrorEvent = (event: MessageEvent) => {
-    const parsed = JSON.parse(event.data) as SearchStreamEvent
-    args.onEvent(parsed)
-    source.close()
-  }
-
-  source.addEventListener('intent.created', handleIntent as EventListener)
-  source.addEventListener('article.created', handleArticle as EventListener)
-  source.addEventListener('query.completed', handleCompleted as EventListener)
-  source.addEventListener('query.error', handleErrorEvent as EventListener)
+  source.addEventListener('order.started', handleEvent as EventListener)
+  source.addEventListener('order.progress', handleEvent as EventListener)
+  source.addEventListener('intent.upserted', handleEvent as EventListener)
+  source.addEventListener('article.upserted', handleEvent as EventListener)
+  source.addEventListener('order.completed', handleEvent as EventListener)
+  source.addEventListener('order.failed', handleEvent as EventListener)
 
   source.onerror = () => {
     args.onError(new Error('SSE connection failed'))

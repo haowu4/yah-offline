@@ -6,6 +6,16 @@
   padding: 22px 0 28px;
 }
 
+.statusLineRow {
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
 .statusLine {
   margin: 0 0 14px;
   padding-bottom: 10px;
@@ -13,6 +23,12 @@
   font-size: 13px;
   color: #555;
   letter-spacing: 0.1px;
+}
+
+.statusLineInRow {
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .inlineButton {
@@ -133,12 +149,6 @@
   color: #5f6773;
 }
 
-.menuDivider {
-  height: 1px;
-  background: #e7ebf1;
-  margin: 2px 0;
-}
-
 .menuItem:hover:not(:disabled) {
   background: #f3f7ff;
 }
@@ -166,6 +176,54 @@
 
 .statusDots span:nth-child(3) {
   animation-delay: 0.4s;
+}
+
+.debugPanel {
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #f8f9fb;
+}
+
+.debugTitle {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4d5561;
+}
+
+.debugMeta {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #6b7480;
+}
+
+.debugEmpty {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7480;
+}
+
+.debugList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.debugItem {
+  font-size: 12px;
+  color: #4d5561;
+}
+
+.debugItemTime {
+  margin-right: 6px;
+  color: #7b8490;
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
 }
 
 @keyframes status-dot-blink {
@@ -270,7 +328,18 @@
 }
 
 .error {
+  margin: 0;
   color: #b00020;
+}
+
+.errorRow {
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 .empty {
@@ -435,12 +504,20 @@
 }
 
 .intentTitle {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 15px;
   font-weight: 560;
   letter-spacing: 0;
   text-transform: none;
   color: #6a7280;
+}
+
+.intentHeader {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
 }
 
 .intentStatus {
@@ -474,14 +551,6 @@
   letter-spacing: -0.01em;
   color: #1f4fbf;
   text-decoration: none;
-}
-
-.articleHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 4px;
-  margin-bottom: 6px;
 }
 
 .articleLink:hover {

@@ -8,6 +8,14 @@ import {
     QueryResultPayload,
     SearchRecentQueryItem,
 } from "../../type/search.js";
+import {
+    GenerationOrderEvent,
+    GenerationOrderKind,
+    GenerationOrderLogLevel,
+    GenerationOrderLogRecord,
+    GenerationOrderRecord,
+    GenerationOrderStatus,
+} from "../../type/order.js";
 
 export class SearchDBClient {
     db: Database.Database;
@@ -290,9 +298,11 @@ export class SearchDBClient {
         slug: string
         content: string
         replaceExistingForIntent?: boolean
+        keepTitleWhenReplacing?: boolean
     }): ArticleRecord {
         const intentId = args.intentId ?? null
         const replaceExistingForIntent = Boolean(args.replaceExistingForIntent)
+        const keepTitleWhenReplacing = Boolean(args.keepTitleWhenReplacing)
 
         if (intentId !== null) {
             const existing = this.db
@@ -314,16 +324,28 @@ export class SearchDBClient {
                     if (!title || !content) {
                         throw new Error("Article title and content are required")
                     }
-                    const uniqueSlug = this.getUniqueSlug(args.slug, existing.id)
-                    this.db
-                        .prepare(
-                            `
-                            UPDATE article
-                            SET title = ?, slug = ?, content = ?
-                            WHERE id = ?
-                            `
-                        )
-                        .run(title, uniqueSlug, content, existing.id)
+                    if (keepTitleWhenReplacing) {
+                        this.db
+                            .prepare(
+                                `
+                                UPDATE article
+                                SET content = ?
+                                WHERE id = ?
+                                `
+                            )
+                            .run(content, existing.id)
+                    } else {
+                        const uniqueSlug = this.getUniqueSlug(args.slug, existing.id)
+                        this.db
+                            .prepare(
+                                `
+                                UPDATE article
+                                SET title = ?, slug = ?, content = ?
+                                WHERE id = ?
+                                `
+                            )
+                            .run(title, uniqueSlug, content, existing.id)
+                    }
                 }
                 return this.getArticleById(existing.id)
             }
@@ -695,5 +717,404 @@ export class SearchDBClient {
             )
             .get() as { count: number } | undefined
         return row?.count ?? 0
+    }
+
+    private toGenerationOrder(row: {
+        id: number
+        query_id: number
+        kind: GenerationOrderKind
+        intent_id: number | null
+        status: GenerationOrderStatus
+        requested_by: "user" | "system"
+        request_payload_json: string
+        result_summary_json: string | null
+        error_message: string | null
+        started_at: string | null
+        finished_at: string | null
+        created_at: string
+        updated_at: string
+    }): GenerationOrderRecord {
+        return {
+            id: row.id,
+            queryId: row.query_id,
+            kind: row.kind,
+            intentId: row.intent_id,
+            status: row.status,
+            requestedBy: row.requested_by,
+            requestPayloadJson: row.request_payload_json,
+            resultSummaryJson: row.result_summary_json,
+            errorMessage: row.error_message,
+            startedAt: row.started_at,
+            finishedAt: row.finished_at,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+        }
+    }
+
+    createGenerationOrder(args: {
+        queryId: number
+        kind: GenerationOrderKind
+        intentId?: number | null
+        requestedBy?: "user" | "system"
+        requestPayload?: unknown
+    }): GenerationOrderRecord {
+        const result = this.db
+            .prepare(
+                `
+                INSERT INTO generation_order (query_id, kind, intent_id, requested_by, request_payload_json)
+                VALUES (?, ?, ?, ?, ?)
+                `
+            )
+            .run(
+                args.queryId,
+                args.kind,
+                args.intentId ?? null,
+                args.requestedBy ?? "user",
+                JSON.stringify(args.requestPayload ?? {})
+            )
+
+        return this.getGenerationOrderById(result.lastInsertRowid as number)
+    }
+
+    getGenerationOrderById(orderId: number): GenerationOrderRecord {
+        const row = this.db
+            .prepare(
+                `
+                SELECT id, query_id, kind, intent_id, status, requested_by, request_payload_json,
+                       result_summary_json, error_message, started_at, finished_at, created_at, updated_at
+                FROM generation_order
+                WHERE id = ?
+                `
+            )
+            .get(orderId) as
+            | {
+                id: number
+                query_id: number
+                kind: GenerationOrderKind
+                intent_id: number | null
+                status: GenerationOrderStatus
+                requested_by: "user" | "system"
+                request_payload_json: string
+                result_summary_json: string | null
+                error_message: string | null
+                started_at: string | null
+                finished_at: string | null
+                created_at: string
+                updated_at: string
+            }
+            | undefined
+
+        if (!row) throw new Error("Generation order not found")
+        return this.toGenerationOrder(row)
+    }
+
+    listActiveOrdersForScope(args: {
+        scopeType: "query" | "intent"
+        queryId: number
+        intentId?: number
+    }): GenerationOrderRecord[] {
+        const rows = args.scopeType === "query"
+            ? (this.db
+                .prepare(
+                    `
+                    SELECT id, query_id, kind, intent_id, status, requested_by, request_payload_json,
+                           result_summary_json, error_message, started_at, finished_at, created_at, updated_at
+                    FROM generation_order
+                    WHERE query_id = ? AND status IN ('queued', 'running')
+                    ORDER BY id DESC
+                    `
+                )
+                .all(args.queryId) as Array<{
+                    id: number
+                    query_id: number
+                    kind: GenerationOrderKind
+                    intent_id: number | null
+                    status: GenerationOrderStatus
+                    requested_by: "user" | "system"
+                    request_payload_json: string
+                    result_summary_json: string | null
+                    error_message: string | null
+                    started_at: string | null
+                    finished_at: string | null
+                    created_at: string
+                    updated_at: string
+                }>)
+            : (this.db
+                .prepare(
+                    `
+                    SELECT id, query_id, kind, intent_id, status, requested_by, request_payload_json,
+                           result_summary_json, error_message, started_at, finished_at, created_at, updated_at
+                    FROM generation_order
+                    WHERE query_id = ? AND intent_id = ? AND status IN ('queued', 'running')
+                    ORDER BY id DESC
+                    `
+                )
+                .all(args.queryId, args.intentId ?? -1) as Array<{
+                    id: number
+                    query_id: number
+                    kind: GenerationOrderKind
+                    intent_id: number | null
+                    status: GenerationOrderStatus
+                    requested_by: "user" | "system"
+                    request_payload_json: string
+                    result_summary_json: string | null
+                    error_message: string | null
+                    started_at: string | null
+                    finished_at: string | null
+                    created_at: string
+                    updated_at: string
+                }>)
+
+        return rows.map((row) => this.toGenerationOrder(row))
+    }
+
+    claimNextQueuedOrder(): GenerationOrderRecord | null {
+        const tx = this.db.transaction(() => {
+            const row = this.db
+                .prepare(
+                    `
+                    SELECT id
+                    FROM generation_order
+                    WHERE status = 'queued'
+                    ORDER BY id ASC
+                    LIMIT 1
+                    `
+                )
+                .get() as { id: number } | undefined
+
+            if (!row) return null
+
+            const updated = this.db
+                .prepare(
+                    `
+                    UPDATE generation_order
+                    SET status = 'running',
+                        started_at = datetime('now'),
+                        updated_at = datetime('now')
+                    WHERE id = ? AND status = 'queued'
+                    `
+                )
+                .run(row.id)
+
+            if (updated.changes === 0) return null
+            return this.getGenerationOrderById(row.id)
+        })
+
+        return tx()
+    }
+
+    completeGenerationOrder(orderId: number, summary?: unknown): void {
+        this.db
+            .prepare(
+                `
+                UPDATE generation_order
+                SET status = 'completed',
+                    result_summary_json = ?,
+                    error_message = NULL,
+                    finished_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE id = ?
+                `
+            )
+            .run(summary ? JSON.stringify(summary) : null, orderId)
+    }
+
+    failGenerationOrder(orderId: number, message: string): void {
+        this.db
+            .prepare(
+                `
+                UPDATE generation_order
+                SET status = 'failed',
+                    error_message = ?,
+                    finished_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE id = ?
+                `
+            )
+            .run(message, orderId)
+    }
+
+    cancelOrder(orderId: number): void {
+        this.db
+            .prepare(
+                `
+                UPDATE generation_order
+                SET status = 'cancelled',
+                    finished_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE id = ? AND status IN ('queued', 'running')
+                `
+            )
+            .run(orderId)
+    }
+
+    appendGenerationEvent(orderId: number, event: GenerationOrderEvent): number {
+        const tx = this.db.transaction(() => {
+            const row = this.db
+                .prepare(
+                    `
+                    SELECT COALESCE(MAX(seq), 0) AS max_seq
+                    FROM generation_event
+                    WHERE order_id = ?
+                    `
+                )
+                .get(orderId) as { max_seq: number } | undefined
+            const nextSeq = (row?.max_seq ?? 0) + 1
+            this.db
+                .prepare(
+                    `
+                    INSERT INTO generation_event (order_id, seq, event_type, payload_json)
+                    VALUES (?, ?, ?, ?)
+                    `
+                )
+                .run(orderId, nextSeq, event.type, JSON.stringify(event))
+            return nextSeq
+        })
+        return tx()
+    }
+
+    replayOrderEventsAfterSeq(orderId: number, afterSeq: number): Array<{ seq: number; event: GenerationOrderEvent }> {
+        const rows = this.db
+            .prepare(
+                `
+                SELECT seq, payload_json
+                FROM generation_event
+                WHERE order_id = ? AND seq > ?
+                ORDER BY seq ASC
+                `
+            )
+            .all(orderId, Math.max(0, afterSeq)) as Array<{ seq: number; payload_json: string }>
+
+        return rows.flatMap((row) => {
+            try {
+                return [{ seq: row.seq, event: JSON.parse(row.payload_json) as GenerationOrderEvent }]
+            } catch {
+                return []
+            }
+        })
+    }
+
+    appendGenerationLog(args: {
+        orderId: number
+        stage: "order" | "spell" | "intent" | "article"
+        level: GenerationOrderLogLevel
+        message: string
+        meta?: unknown
+    }): number {
+        const result = this.db
+            .prepare(
+                `
+                INSERT INTO generation_log (order_id, stage, level, message, meta_json)
+                VALUES (?, ?, ?, ?, ?)
+                `
+            )
+            .run(args.orderId, args.stage, args.level, args.message, JSON.stringify(args.meta ?? {}))
+        return result.lastInsertRowid as number
+    }
+
+    listGenerationLogs(orderId: number): GenerationOrderLogRecord[] {
+        const rows = this.db
+            .prepare(
+                `
+                SELECT id, order_id, stage, level, message, meta_json, created_at
+                FROM generation_log
+                WHERE order_id = ?
+                ORDER BY id ASC
+                `
+            )
+            .all(orderId) as Array<{
+                id: number
+                order_id: number
+                stage: "order" | "spell" | "intent" | "article"
+                level: GenerationOrderLogLevel
+                message: string
+                meta_json: string
+                created_at: string
+            }>
+
+        return rows.map((row) => ({
+            id: row.id,
+            orderId: row.order_id,
+            stage: row.stage,
+            level: row.level,
+            message: row.message,
+            metaJson: row.meta_json,
+            createdAt: row.created_at,
+        }))
+    }
+
+    tryAcquireLock(args: {
+        orderId: number
+        scopeType: "query" | "intent"
+        scopeKey: string
+        leaseSeconds: number
+    }): { ok: boolean; ownerOrderId?: number } {
+        const tx = this.db.transaction(() => {
+            this.db
+                .prepare(
+                    `
+                    DELETE FROM generation_lock
+                    WHERE lease_expires_at <= datetime('now')
+                    `
+                )
+                .run()
+
+            const existing = this.db
+                .prepare(
+                    `
+                    SELECT owner_order_id
+                    FROM generation_lock
+                    WHERE scope_type = ? AND scope_key = ?
+                    LIMIT 1
+                    `
+                )
+                .get(args.scopeType, args.scopeKey) as { owner_order_id: number } | undefined
+
+            if (existing && existing.owner_order_id !== args.orderId) {
+                return { ok: false as const, ownerOrderId: existing.owner_order_id }
+            }
+
+            this.db
+                .prepare(
+                    `
+                    INSERT INTO generation_lock (scope_type, scope_key, owner_order_id, lease_expires_at, updated_at)
+                    VALUES (?, ?, ?, datetime('now', '+' || ? || ' seconds'), datetime('now'))
+                    ON CONFLICT(scope_type, scope_key)
+                    DO UPDATE SET
+                      owner_order_id = excluded.owner_order_id,
+                      lease_expires_at = excluded.lease_expires_at,
+                      updated_at = datetime('now')
+                    `
+                )
+                .run(args.scopeType, args.scopeKey, args.orderId, args.leaseSeconds)
+
+            return { ok: true as const }
+        })
+
+        return tx()
+    }
+
+    renewOrderLocks(orderId: number, leaseSeconds: number): void {
+        this.db
+            .prepare(
+                `
+                UPDATE generation_lock
+                SET lease_expires_at = datetime('now', '+' || ? || ' seconds'),
+                    updated_at = datetime('now')
+                WHERE owner_order_id = ?
+                `
+            )
+            .run(leaseSeconds, orderId)
+    }
+
+    releaseOrderLocks(orderId: number): void {
+        this.db
+            .prepare(
+                `
+                DELETE FROM generation_lock
+                WHERE owner_order_id = ?
+                `
+            )
+            .run(orderId)
     }
 }

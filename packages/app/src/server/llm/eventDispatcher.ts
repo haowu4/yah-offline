@@ -1,35 +1,31 @@
 import { AppCtx } from "../../appCtx.js"
-import { LLMEventPayloadByTopic, LLMEventTopic } from "../../type/llm.js"
+import { GenerationOrderEvent } from "../../type/order.js"
 
-type Subscriber<T extends LLMEventTopic> = {
+type Subscriber = {
   id: number
-  topic: T
-  entityId?: string
+  orderId: number
   send: (args: {
-    id: number
-    topic: T
-    entityId: string
-    event: LLMEventPayloadByTopic[T]
+    seq: number
+    orderId: number
+    event: GenerationOrderEvent
   }) => void
 }
 
 export class EventDispatcher {
   private appCtx: AppCtx
-  private subscribers = new Map<number, Subscriber<LLMEventTopic>>()
+  private subscribers = new Map<number, Subscriber>()
   private nextSubscriberId = 1
 
   constructor(appCtx: AppCtx) {
     this.appCtx = appCtx
   }
 
-  subscribe<T extends LLMEventTopic>(args: {
-    topic: T
-    entityId?: string
+  subscribe(args: {
+    orderId: number
     send: (payload: {
-      id: number
-      topic: T
-      entityId: string
-      event: LLMEventPayloadByTopic[T]
+      seq: number
+      orderId: number
+      event: GenerationOrderEvent
     }) => void
   }): () => void {
     const id = this.nextSubscriberId
@@ -37,9 +33,8 @@ export class EventDispatcher {
 
     this.subscribers.set(id, {
       id,
-      topic: args.topic,
-      entityId: args.entityId,
-      send: args.send as Subscriber<LLMEventTopic>["send"],
+      orderId: args.orderId,
+      send: args.send,
     })
 
     return () => {
@@ -47,64 +42,39 @@ export class EventDispatcher {
     }
   }
 
-  emit<T extends LLMEventTopic>(args: {
-    topic: T
-    entityId: string
-    event: LLMEventPayloadByTopic[T]
+  emit(args: {
+    orderId: number
+    event: GenerationOrderEvent
   }): number {
-    const llmDB = this.appCtx.dbClients.llm()
-    const eventId = llmDB.appendEvent({
-      topic: args.topic,
-      entityId: args.entityId,
-      eventType: args.event.type,
-      payload: args.event,
-    })
+    const searchDB = this.appCtx.dbClients.search()
+    const seq = searchDB.appendGenerationEvent(args.orderId, args.event)
 
     for (const subscriber of this.subscribers.values()) {
-      if (subscriber.topic !== args.topic) continue
-      if (subscriber.entityId && subscriber.entityId !== args.entityId) continue
+      if (subscriber.orderId !== args.orderId) continue
 
       subscriber.send({
-        id: eventId,
-        topic: args.topic,
-        entityId: args.entityId,
+        seq,
+        orderId: args.orderId,
         event: args.event,
       })
     }
 
-    return eventId
+    return seq
   }
 
-  replayAfter<T extends LLMEventTopic>(args: {
-    topic: T
-    lastEventId: number
-    entityId?: string
+  replayAfter(args: {
+    orderId: number
+    afterSeq: number
   }): Array<{
-    id: number
-    topic: T
-    entityId: string
-    event: LLMEventPayloadByTopic[T]
+    seq: number
+    orderId: number
+    event: GenerationOrderEvent
   }> {
-    const llmDB = this.appCtx.dbClients.llm()
-    const rows = llmDB.listEventsAfterId({
-      lastId: args.lastEventId,
-      topic: args.topic,
-      entityId: args.entityId,
-    })
-
-    return rows.flatMap((row) => {
-      try {
-        return [
-          {
-            id: row.id,
-            topic: args.topic,
-            entityId: row.entityId,
-            event: JSON.parse(row.payloadJson) as LLMEventPayloadByTopic[T],
-          },
-        ]
-      } catch {
-        return []
-      }
-    })
+    const searchDB = this.appCtx.dbClients.search()
+    return searchDB.replayOrderEventsAfterSeq(args.orderId, args.afterSeq).map((row) => ({
+      seq: row.seq,
+      orderId: args.orderId,
+      event: row.event,
+    }))
   }
 }

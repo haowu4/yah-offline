@@ -4,7 +4,7 @@ import { FiRefreshCw } from 'react-icons/fi'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useI18n } from '../i18n/useI18n'
 import type { ApiArticleDetail } from '../lib/api/search'
-import { getArticleBySlug, rerunArticleForIntent, streamQuery } from '../lib/api/search'
+import { createOrder, getArticleBySlug, isResourceLockedError, streamOrder } from '../lib/api/search'
 import styles from './ArticlePage.module.css'
 import '@ootc/markdown/style.css';
 
@@ -96,14 +96,27 @@ export function ArticlePage() {
     const currentIntentId = state.payload.intent.id
 
     try {
-      await rerunArticleForIntent(query.id, currentIntentId)
+      let orderId: number
+      try {
+        const created = await createOrder({
+          kind: 'article_regen_keep_title',
+          queryId: query.id,
+          intentId: currentIntentId,
+        })
+        orderId = created.orderId
+      } catch (error) {
+        if (!isResourceLockedError(error) || typeof error.payload?.activeOrderId !== 'number') {
+          throw error
+        }
+        orderId = error.payload.activeOrderId
+      }
 
       let settled = false
-      const unsubscribe = streamQuery({
-        queryId: query.id,
+      const unsubscribe = streamOrder({
+        orderId,
         onEvent: async (event) => {
           if (settled) return
-          if (event.type === 'article.created' && event.intentId === currentIntentId) {
+          if (event.type === 'article.upserted' && event.intentId === currentIntentId) {
             settled = true
             unsubscribe()
             const nextSlug = event.article.slug
@@ -118,7 +131,7 @@ export function ArticlePage() {
             return
           }
 
-          if (event.type === 'query.error' || event.type === 'query.completed') {
+          if (event.type === 'order.failed' || event.type === 'order.completed') {
             settled = true
             unsubscribe()
             try {

@@ -1,7 +1,7 @@
 import { AppCtx } from "../../../appCtx.js"
 import { createCallId, ellipsis40, errorDetails, logDebugJson, logLine } from "../../../logging/index.js"
 import { AbstractMagicApi } from "../../../magic/api.js"
-import { SearchGenerateJobPayload } from "../../../type/llm.js"
+import { GenerationOrderRecord } from "../../../type/order.js"
 import { EventDispatcher } from "../eventDispatcher.js"
 import { LLMRuntimeConfigCache } from "../runtimeConfigCache.js"
 
@@ -34,7 +34,7 @@ export function createSearchGenerateHandler(args: {
   eventDispatcher: EventDispatcher
   runtimeConfigCache: LLMRuntimeConfigCache
   magicApi: AbstractMagicApi
-}): (payload: SearchGenerateJobPayload) => Promise<void> {
+}): (order: GenerationOrderRecord) => Promise<void> {
   const searchDB = args.appCtx.dbClients.search()
 
   const callWithRetry = async <T>(callArgs: {
@@ -102,130 +102,191 @@ export function createSearchGenerateHandler(args: {
     throw lastError instanceof Error ? lastError : new Error("Search generation failed")
   }
 
-  return async (payload) => {
-    const query = searchDB.getQueryById(payload.queryId)
+  return async (order) => {
+    const query = searchDB.getQueryById(order.queryId)
     if (!query) {
       throw new Error("Query not found")
     }
 
-    const entityId = `query:${payload.queryId}`
-    const existing = searchDB.getQueryResult(payload.queryId)
-    const regenerateIntents = payload.regenerateIntents === true
-    const regenerateArticles = payload.regenerateArticles === true
-    const targetIntentId =
-      Number.isInteger(payload.targetIntentId) && (payload.targetIntentId as number) > 0
-        ? (payload.targetIntentId as number)
-        : null
-    let intentRecords: Array<{ id: number; intent: string }>
+    const queryLock = searchDB.tryAcquireLock({
+      orderId: order.id,
+      scopeType: "query",
+      scopeKey: `query:${order.queryId}`,
+      leaseSeconds: 60,
+    })
+    if (!queryLock.ok) {
+      throw new Error(`Resource locked by order ${queryLock.ownerOrderId}`)
+    }
 
-    if (!regenerateIntents && existing && existing.intents.length > 0) {
-      intentRecords = existing.intents.map((intent) => ({
-        id: intent.id,
-        intent: intent.intent,
-      }))
-    } else {
-      if (regenerateIntents) {
-        searchDB.clearQueryIntentLinks(payload.queryId)
+    const payload = (() => {
+      try {
+        return JSON.parse(order.requestPayloadJson || "{}") as { keepTitle?: boolean }
+      } catch {
+        return {}
+      }
+    })()
+
+    args.eventDispatcher.emit({
+      orderId: order.id,
+      event: {
+        type: "order.started",
+        orderId: order.id,
+        queryId: order.queryId,
+        kind: order.kind,
+        intentId: order.intentId ?? undefined,
+      },
+    })
+
+    searchDB.appendGenerationLog({
+      orderId: order.id,
+      stage: "order",
+      level: "info",
+      message: "Order started",
+      meta: { kind: order.kind, queryId: order.queryId, intentId: order.intentId },
+    })
+
+    try {
+      let intentRecords: Array<{ id: number; intent: string }> = []
+
+      if (order.kind === "query_full") {
+        searchDB.clearQueryIntentLinks(order.queryId)
+        args.eventDispatcher.emit({
+          orderId: order.id,
+          event: {
+            type: "order.progress",
+            orderId: order.id,
+            queryId: order.queryId,
+            stage: "intent",
+            message: "Resolving intents",
+          },
+        })
+
+        const intentResult = await callWithRetry({
+          trigger: "intent-generation",
+          query: query.value,
+          run: () =>
+            args.magicApi.resolveIntent({
+              query: query.value,
+              language: query.language,
+            }),
+        })
+
+        const intents = intentResult.intents.length > 0 ? intentResult.intents : [query.value]
+        intentRecords = intents.map((intentCandidate) => {
+          const intent = searchDB.upsertIntent(order.queryId, intentCandidate)
+          args.eventDispatcher.emit({
+            orderId: order.id,
+            event: {
+              type: "intent.upserted",
+              orderId: order.id,
+              queryId: order.queryId,
+              intent: {
+                id: intent.id,
+                value: intent.intent,
+              },
+            },
+          })
+          return { id: intent.id, intent: intent.intent }
+        })
+      } else if (order.intentId) {
+        const found = searchDB.listIntentsByQueryId(order.queryId).find((item) => item.id === order.intentId)
+        if (!found) {
+          throw new Error("Target intent not found for query")
+        }
+        intentRecords = [{ id: found.id, intent: found.intent }]
+      } else {
+        throw new Error("intent_id is required for this order kind")
       }
 
-      const intentResult = await callWithRetry({
-        trigger: "intent-generation",
-        query: query.value,
-        run: () =>
-          args.magicApi.resolveIntent({
-            query: query.value,
-            language: query.language,
-          }),
-      })
-      const intents = intentResult.intents.length > 0
-        ? intentResult.intents
-        : [query.value]
+      for (const intentRecord of intentRecords) {
+        const intentLock = searchDB.tryAcquireLock({
+          orderId: order.id,
+          scopeType: "intent",
+          scopeKey: `intent:${order.queryId}:${intentRecord.id}`,
+          leaseSeconds: 60,
+        })
+        if (!intentLock.ok) {
+          throw new Error(`Intent locked by order ${intentLock.ownerOrderId}`)
+        }
 
-      intentRecords = intents.map((intentCandidate) => {
-        const intent = searchDB.upsertIntent(payload.queryId, intentCandidate)
         args.eventDispatcher.emit({
-          topic: "search.query",
-          entityId,
+          orderId: order.id,
           event: {
-            type: "intent.created",
-            queryId: payload.queryId,
-            intent: {
-              id: intent.id,
-              value: intent.intent,
+            type: "order.progress",
+            orderId: order.id,
+            queryId: order.queryId,
+            stage: "article",
+            message: `Generating article for intent ${intentRecord.id}`,
+          },
+        })
+
+        const articleResult = await callWithRetry({
+          trigger: "article-generation",
+          query: query.value,
+          intent: intentRecord.intent,
+          run: () =>
+            args.magicApi.createArticle({
+              query: query.value,
+              intent: intentRecord.intent,
+              language: query.language,
+            }),
+        })
+
+        const shouldKeepTitle = order.kind === "article_regen_keep_title" || payload.keepTitle === true
+        const article = searchDB.createArticle({
+          intentId: intentRecord.id,
+          title: articleResult.article.title,
+          slug: articleResult.article.slug,
+          content: articleResult.article.content,
+          replaceExistingForIntent: true,
+          keepTitleWhenReplacing: shouldKeepTitle,
+        })
+
+        const queryResult = searchDB.getQueryResult(order.queryId)
+        const snippet = queryResult?.intents
+          .find((intent) => intent.id === intentRecord.id)
+          ?.articles.find((candidate) => candidate.id === article.id)
+          ?.snippet || ""
+
+        args.eventDispatcher.emit({
+          orderId: order.id,
+          event: {
+            type: "article.upserted",
+            orderId: order.id,
+            queryId: order.queryId,
+            intentId: intentRecord.id,
+            article: {
+              id: article.id,
+              title: article.title,
+              slug: article.slug,
+              snippet,
             },
           },
         })
-        return {
-          id: intent.id,
-          intent: intent.intent,
-        }
-      })
-    }
-
-    if (targetIntentId !== null) {
-      intentRecords = intentRecords.filter((intentRecord) => intentRecord.id === targetIntentId)
-      if (intentRecords.length === 0) {
-        throw new Error("Target intent not found for query")
       }
-    }
-
-    for (const intentRecord of intentRecords) {
-      const latest = searchDB.getQueryResult(payload.queryId)
-      const latestIntent = latest?.intents.find((intent) => intent.id === intentRecord.id)
-      const existingArticle = latestIntent?.articles[0]
-      if (existingArticle && !regenerateArticles) continue
-
-      const articleResult = await callWithRetry({
-        trigger: "article-generation",
-        query: query.value,
-        intent: intentRecord.intent,
-        run: () =>
-          args.magicApi.createArticle({
-            query: query.value,
-            intent: intentRecord.intent,
-            language: query.language,
-          }),
-      })
-
-      const article = searchDB.createArticle({
-        intentId: intentRecord.id,
-        title: articleResult.article.title,
-        slug: articleResult.article.slug,
-        content: articleResult.article.content,
-        replaceExistingForIntent: regenerateArticles,
-      })
-
-      const queryResult = searchDB.getQueryResult(payload.queryId)
-      const snippet = queryResult?.intents
-        .find((intent) => intent.id === intentRecord.id)
-        ?.articles.find((candidate) => candidate.id === article.id)
-        ?.snippet || ""
 
       args.eventDispatcher.emit({
-        topic: "search.query",
-        entityId,
+        orderId: order.id,
         event: {
-          type: "article.created",
-          queryId: payload.queryId,
-          intentId: intentRecord.id,
-          article: {
-            id: article.id,
-            title: article.title,
-            slug: article.slug,
-            snippet,
-          },
+          type: "order.completed",
+          orderId: order.id,
+          queryId: order.queryId,
         },
       })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Order fulfillment failed"
+      args.eventDispatcher.emit({
+        orderId: order.id,
+        event: {
+          type: "order.failed",
+          orderId: order.id,
+          queryId: order.queryId,
+          message,
+        },
+      })
+      throw error
+    } finally {
+      searchDB.releaseOrderLocks(order.id)
     }
-
-    args.eventDispatcher.emit({
-      topic: "search.query",
-      entityId,
-      event: {
-        type: "query.completed",
-        queryId: payload.queryId,
-        replayed: !regenerateIntents && Boolean(existing && existing.intents.length > 0),
-      },
-    })
   }
 }

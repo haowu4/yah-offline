@@ -17,11 +17,17 @@ function safeJsonParse<T>(text: string, fallback: T): T {
   }
 }
 
-function getOutputText(response: Awaited<ReturnType<OpenAI["responses"]["create"]>>): string {
-  if ("output_text" in response && typeof response.output_text === "string") {
-    return response.output_text
+function getChatOutputText(response: unknown): string {
+  const anyResponse = response as { choices?: Array<{ message?: { content?: unknown } }> } | null
+  const content = anyResponse?.choices?.[0]?.message?.content
+  if (typeof content === "string") return content
+  if (Array.isArray(content)) {
+    const textParts = content
+      .map((part) => (typeof part === "object" && part && "text" in part ? String((part as { text?: unknown }).text ?? "") : ""))
+      .filter(Boolean)
+    return textParts.join("\n")
   }
-  throw new Error("Magic response did not contain output_text")
+  throw new Error("Magic response did not contain chat completion content")
 }
 
 function slugify(input: string): string {
@@ -94,7 +100,8 @@ export class OpenaiMagicApi extends AbstractMagicApi {
   }
 
   providerName(_args: {}): string {
-    return "openai"
+    this.refreshClientIfNeeded()
+    return inferProviderFromBaseURL(this.transportSnapshot?.baseURL || "")
   }
 
   private loadTransportSnapshot(): {
@@ -148,47 +155,57 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     return this.client
   }
 
+  private async createText(args: {
+    model: string
+    system: string
+    user: string
+  }): Promise<string> {
+    const client = this.refreshClientIfNeeded()
+
+    const chatResponse = await client.chat.completions.create({
+      model: args.model,
+      stream: false,
+      messages: [
+        { role: "system", content: args.system },
+        { role: "user", content: args.user },
+      ],
+    })
+    return getChatOutputText(chatResponse)
+  }
+
   async correctSpelling(args: {
     text: string
     language?: string
   }): Promise<{ text: string }> {
-    const client = this.refreshClientIfNeeded()
     const configDB = this.appCtx.dbClients.config()
     const model = requiredConfigValue(configDB, "search.spelling_correction.model")
 
-    const response = await client.responses.create({
-      model,
-      input: [
-        {
-          role: "system",
-          content:
-            "Task: spelling correction for search queries only. " +
-            "Output must be exactly one single-line query string, with no prefixes/suffixes, quotes, markdown, or explanations. " +
-            "Never output phrases like 'Including results for', 'Did you mean', 'Search only for', 'Language:', or summaries. " +
-            "Correct only clear spelling mistakes and obvious character errors. " +
-            "Do not rewrite style, punctuation, formatting, or wording unless required to fix a real typo. " +
-            "For keyword-style queries, preserve token order and separators whenever possible. " +
-            "If no real typo exists, return the input unchanged. " +
-            "Examples:\n" +
-            "Input: self hosted vectro database\n" +
-            "Output: self hosted vector database\n" +
-            "Input: sqlite fts5 bm25\n" +
-            "Output: sqlite fts5 bm25\n" +
-            "Input: 胰岛素抵抗 基础概念\n" +
-            "Output: 胰岛素抵抗 基础概念\n" +
-            "Input: causes of world war i\n" +
-            "Output: causes of world war i\n" +
-            "Input: Including results for \"causes of world war i\". Search only for \"causes of world war i\"\n" +
-            "Output: causes of world war i",
-        },
-        {
-          role: "user",
-          content: args.text,
-        },
-      ],
-    })
-
-    const text = sanitizeSpellingOutput(getOutputText(response))
+    const system =
+      "Task: spelling correction for search queries only. " +
+      "Output must be exactly one single-line query string, with no prefixes/suffixes, quotes, markdown, or explanations. " +
+      "Never output phrases like 'Including results for', 'Did you mean', 'Search only for', 'Language:', or summaries. " +
+      "Correct only clear spelling mistakes and obvious character errors. " +
+      "Do not rewrite style, punctuation, formatting, or wording unless required to fix a real typo. " +
+      "For keyword-style queries, preserve token order and separators whenever possible. " +
+      "If no real typo exists, return the input unchanged. " +
+      "Examples:\n" +
+      "Input: self hosted vectro database\n" +
+      "Output: self hosted vector database\n" +
+      "Input: sqlite fts5 bm25\n" +
+      "Output: sqlite fts5 bm25\n" +
+      "Input: 胰岛素抵抗 基础概念\n" +
+      "Output: 胰岛素抵抗 基础概念\n" +
+      "Input: causes of world war i\n" +
+      "Output: causes of world war i\n" +
+      "Input: Including results for \"causes of world war i\". Search only for \"causes of world war i\"\n" +
+      "Output: causes of world war i"
+    const text = sanitizeSpellingOutput(
+      await this.createText({
+        model,
+        system,
+        user: args.text,
+      })
+    )
     return { text: text || args.text }
   }
 
@@ -196,30 +213,21 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     query: string
     language?: string
   }): Promise<MagicSearchIntentResult> {
-    const client = this.refreshClientIfNeeded()
     const configDB = this.appCtx.dbClients.config()
     const model = requiredConfigValue(configDB, "search.intent_resolve.model")
 
-    const response = await client.responses.create({
+    const responseText = await this.createText({
       model,
-      input: [
-        {
-          role: "system",
-          content:
-            "Extract user search intents. Return JSON only: {\"intents\": string[]}. " +
-            "Output 2-5 concise intents, no duplicates, no numbering, no markdown.",
-        },
-        {
-          role: "user",
-          content: [
-            args.language ? `Language: ${args.language}` : "Language: auto-detect",
-            `Query: ${args.query}`,
-          ].join("\n"),
-        },
-      ],
+      system:
+        "Extract user search intents. Return JSON only: {\"intents\": string[]}. " +
+        "Output 2-5 concise intents, no duplicates, no numbering, no markdown.",
+      user: [
+        args.language ? `Language: ${args.language}` : "Language: auto-detect",
+        `Query: ${args.query}`,
+      ].join("\n"),
     })
 
-    const parsed = safeJsonParse<{ intents?: string[] }>(getOutputText(response), {})
+    const parsed = safeJsonParse<{ intents?: string[] }>(responseText, {})
     const intents = normalizeIntents(parsed.intents ?? [])
     return { intents: intents.length > 0 ? intents : [args.query.trim()] }
   }
@@ -229,35 +237,26 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     intent: string
     language?: string
   }): Promise<MagicSearchArticleResult> {
-    const client = this.refreshClientIfNeeded()
     const configDB = this.appCtx.dbClients.config()
     const model = requiredConfigValue(configDB, "search.content_generation.model")
 
-    const response = await client.responses.create({
+    const responseText = await this.createText({
       model,
-      input: [
-        {
-          role: "system",
-          content:
-            "Write one useful markdown article for a search intent. Return JSON only: " +
-            "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
-            "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
-            "Do not use escaped or alternative latex delimiters.",
-        },
-        {
-          role: "user",
-          content: [
-            args.language ? `Language: ${args.language}` : "Language: auto-detect",
-            `Query: ${args.query}`,
-            `Intent: ${args.intent}`,
-          ].join("\n"),
-        },
-      ],
+      system:
+        "Write one useful markdown article for a search intent. Return JSON only: " +
+        "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
+        "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
+        "Do not use escaped or alternative latex delimiters.",
+      user: [
+        args.language ? `Language: ${args.language}` : "Language: auto-detect",
+        `Query: ${args.query}`,
+        `Intent: ${args.intent}`,
+      ].join("\n"),
     })
 
     const parsed = safeJsonParse<{
       article?: { title?: string; slug?: string; content?: string }
-    }>(getOutputText(response), {})
+    }>(responseText, {})
 
     const title = parsed.article?.title?.trim() || args.intent.trim() || "Untitled"
     const content = parsed.article?.content?.trim() || ""

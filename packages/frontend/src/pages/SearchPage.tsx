@@ -133,6 +133,8 @@ export function SearchPage() {
   ])
 
   const handleSearch = async (query: string) => {
+    if (search.isLoading && search.activeOrderId) return
+
     const trimmed = query.trim()
     if (!trimmed) {
       navigate('/search')
@@ -223,6 +225,8 @@ export function SearchPage() {
         correctedQuery={search.correctedQuery}
         queryIntents={search.queryIntents}
         isLoading={search.isLoading}
+        activeOrderId={search.activeOrderId}
+        debugEvents={search.debugEvents}
         isReplayed={search.isReplayed}
         error={search.error}
         examples={examples}

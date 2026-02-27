@@ -1,9 +1,10 @@
 import { Router } from "express"
 import { AppCtx } from "../../appCtx.js"
-import { SearchStreamEvent, SearchSuggestionsPayload } from "../../type/search.js"
+import { SearchSuggestionsPayload } from "../../type/search.js"
 import { logDebugJson, logLine, createCallId, ellipsis40, errorDetails } from "../../logging/index.js"
 import { EventDispatcher } from "../llm/eventDispatcher.js"
 import { AbstractMagicApi } from "../../magic/api.js"
+import { GenerationOrderEvent, GenerationOrderKind, GenerationOrderRecord } from "../../type/order.js"
 
 function parseQueryId(value: string): number | null {
   const parsed = Number.parseInt(value, 10)
@@ -50,8 +51,6 @@ function isMeaningfullyDifferent(original: string, corrected: string): boolean {
   const normalizedOriginal = normalizeForDiff(original)
   const normalizedCorrected = normalizeForDiff(corrected)
   if (normalizedOriginal === normalizedCorrected) return false
-  // Ignore punctuation/spacing-only rewrites like:
-  // "胰岛素抵抗 基础概念" -> "胰岛素抵抗：基础概念"
   if (normalizeCompact(original) === normalizeCompact(corrected)) return false
   return true
 }
@@ -71,7 +70,6 @@ function isPlausibleCorrection(original: string, corrected: string): boolean {
   if (candidate.length > maxLen) return false
   if (candidateCompact.length > maxCompactLen) return false
 
-  // A short query correction should stay query-like and not turn into prose.
   if (source.length <= 64 && /[.!?。！？]/.test(candidate) && candidate.length > source.length + 20) {
     return false
   }
@@ -194,15 +192,32 @@ function shouldTrackRecentQuery(args: {
   if (!normalized) return false
   if (normalized.length < args.minChars) return false
   if (args.blacklistTerms.includes(normalized)) return false
-  // filter obvious keyboard-smash style noise like "aaaa" / "1111"
   if (/^([a-z0-9])\1{2,}$/i.test(normalized)) return false
   return true
+}
+
+function parseOrderKind(raw: unknown): GenerationOrderKind | null {
+  if (raw === "query_full" || raw === "intent_regen" || raw === "article_regen_keep_title") return raw
+  return null
+}
+
+function getOrderScope(args: { kind: GenerationOrderKind; queryId: number; intentId: number | null }) {
+  if (args.kind === "query_full") {
+    return {
+      scopeType: "query" as const,
+      scopeKey: `query:${args.queryId}`,
+    }
+  }
+
+  return {
+    scopeType: "intent" as const,
+    scopeKey: `intent:${args.queryId}:${args.intentId}`,
+  }
 }
 
 export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher, magicApi: AbstractMagicApi) {
   const router = Router()
   const searchDB = ctx.dbClients.search()
-  const llmDB = ctx.dbClients.llm()
   const configDB = ctx.dbClients.config()
 
   const callMagicWithRetry = async <T>(args: {
@@ -224,19 +239,6 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
           "info",
           `LLM search ${args.trigger} query="${ellipsis40(args.query)}" provider=${magicApi.providerName({})} ok ${durationMs}ms attempt=${attempt} cid=${callId}`
         )
-        logDebugJson(ctx.config.app.debug, {
-          event: "llm.call",
-          provider: magicApi.providerName({}),
-          operation: `magic.${args.trigger}`,
-          component: "search",
-          trigger: args.trigger,
-          query: args.query.trim(),
-          status: "ok",
-          durationMs,
-          attempt,
-          timeoutMs,
-          callId,
-        })
         return result
       } catch (error) {
         lastError = error
@@ -246,22 +248,6 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
           "error",
           `LLM search ${args.trigger} query="${ellipsis40(args.query)}" provider=${magicApi.providerName({})} error ${durationMs}ms attempt=${attempt} cid=${callId} msg="${details.errorMessage}"`
         )
-        logDebugJson(ctx.config.app.debug, {
-          level: "error",
-          event: "llm.call",
-          provider: magicApi.providerName({}),
-          operation: `magic.${args.trigger}`,
-          component: "search",
-          trigger: args.trigger,
-          query: args.query.trim(),
-          status: "error",
-          durationMs,
-          attempt,
-          timeoutMs,
-          callId,
-          errorName: details.errorName,
-          errorMessage: details.errorMessage,
-        })
       }
     }
 
@@ -286,7 +272,6 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       "auto"
     )
     const spellCorrectionMode = parseSpellCorrectionMode(req.body?.spellCorrectionMode, spellModeDefault)
-    const forceRegenerate = req.body?.forceRegenerate === true
 
     try {
       let correctedCandidate = ""
@@ -367,27 +352,6 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
         })
       }
 
-      if (forceRegenerate) {
-        const entityId = `query:${query.id}`
-        if (!llmDB.hasActiveJob("search.generate", entityId)) {
-          llmDB.deleteEvents({
-            topic: "search.query",
-            entityId,
-          })
-
-          llmDB.enqueueJob({
-            kind: "search.generate",
-            entityId,
-            priority: 10,
-            payload: {
-              queryId: query.id,
-              regenerateIntents: true,
-              regenerateArticles: true,
-            },
-          })
-        }
-      }
-
       res.json({
         queryId: query.id,
         query: query.value,
@@ -404,6 +368,102 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     }
   })
 
+  router.get("/orders/availability", (req, res) => {
+    const kind = parseOrderKind(req.query.kind)
+    const queryId = typeof req.query.queryId === "string" ? parseQueryId(req.query.queryId) : null
+    const intentId = typeof req.query.intentId === "string" ? parseQueryId(req.query.intentId) : null
+
+    if (!kind || !queryId) {
+      res.status(400).json({ error: "kind and queryId are required" })
+      return
+    }
+
+    const scope = kind === "query_full"
+      ? searchDB.listActiveOrdersForScope({ scopeType: "query", queryId })
+      : searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId, intentId: intentId ?? undefined })
+
+    if (scope.length > 0) {
+      const activeOrder = scope[0]
+      res.json({
+        available: false,
+        reason: "locked",
+        activeOrderId: activeOrder.id,
+        scope: kind === "query_full" ? "query" : "intent",
+      })
+      return
+    }
+
+    res.json({
+      available: true,
+      reason: "ok",
+      scope: kind === "query_full" ? "query" : "intent",
+    })
+  })
+
+  router.post("/orders", (req, res) => {
+    const kind = parseOrderKind(req.body?.kind)
+    const queryId = parseQueryId(String(req.body?.queryId ?? ""))
+    const intentId = req.body?.intentId === undefined || req.body?.intentId === null
+      ? null
+      : parseQueryId(String(req.body.intentId))
+
+    if (!kind || !queryId) {
+      res.status(400).json({ error: "kind and queryId are required" })
+      return
+    }
+
+    const query = searchDB.getQueryById(queryId)
+    if (!query) {
+      res.status(404).json({ error: "query not found" })
+      return
+    }
+
+    if (kind !== "query_full") {
+      if (!intentId) {
+        res.status(400).json({ error: "intentId is required" })
+        return
+      }
+      const intentExists = searchDB.listIntentsByQueryId(queryId).some((intent) => intent.id === intentId)
+      if (!intentExists) {
+        res.status(404).json({ error: "intent not found for query" })
+        return
+      }
+    }
+
+    const activeOrders = kind === "query_full"
+      ? searchDB.listActiveOrdersForScope({ scopeType: "query", queryId })
+      : searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId, intentId: intentId ?? undefined })
+
+    if (activeOrders.length > 0) {
+      const activeOrder = activeOrders[0]
+      res.status(409).json({
+        code: "RESOURCE_LOCKED",
+        error: "resource is locked",
+        activeOrderId: activeOrder.id,
+        scope: kind === "query_full" ? "query" : "intent",
+      })
+      return
+    }
+
+    const order = searchDB.createGenerationOrder({
+      queryId,
+      kind,
+      intentId,
+      requestedBy: "user",
+      requestPayload: {
+        keepTitle: kind === "article_regen_keep_title",
+      },
+    })
+
+    res.json({
+      orderId: order.id,
+      queryId: order.queryId,
+      kind: order.kind,
+      status: order.status,
+    })
+  })
+
+  // Compatibility wrappers for old frontend calls.
   router.post("/query/:query_id/rerun-intents", (req, res) => {
     const queryId = parseQueryId(req.params.query_id)
     if (!queryId) {
@@ -411,80 +471,19 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       return
     }
 
-    const query = searchDB.getQueryById(queryId)
-    if (!query) {
-      res.status(404).json({ error: "query not found" })
+    const active = searchDB.listActiveOrdersForScope({ scopeType: "query", queryId })
+    if (active.length > 0) {
+      res.status(409).json({ code: "RESOURCE_LOCKED", activeOrderId: active[0].id })
       return
     }
 
-    const entityId = `query:${queryId}`
-    if (llmDB.hasActiveJob("search.generate", entityId)) {
-      res.status(409).json({ error: "query generation is already running" })
-      return
-    }
-
-    llmDB.deleteEvents({
-      topic: "search.query",
-      entityId,
-    })
-
-    llmDB.enqueueJob({
-      kind: "search.generate",
-      entityId,
-      priority: 10,
-      payload: {
-        queryId,
-        regenerateIntents: true,
-        regenerateArticles: true,
-      },
-    })
-
-    res.json({
+    const order = searchDB.createGenerationOrder({
       queryId,
-      accepted: true,
-      mode: "rerun-intents",
-    })
-  })
-
-  router.post("/query/:query_id/rerun-articles", (req, res) => {
-    const queryId = parseQueryId(req.params.query_id)
-    if (!queryId) {
-      res.status(400).json({ error: "Invalid query_id" })
-      return
-    }
-
-    const query = searchDB.getQueryById(queryId)
-    if (!query) {
-      res.status(404).json({ error: "query not found" })
-      return
-    }
-
-    const entityId = `query:${queryId}`
-    if (llmDB.hasActiveJob("search.generate", entityId)) {
-      res.status(409).json({ error: "query generation is already running" })
-      return
-    }
-
-    llmDB.deleteEvents({
-      topic: "search.query",
-      entityId,
+      kind: "query_full",
+      requestedBy: "user",
     })
 
-    llmDB.enqueueJob({
-      kind: "search.generate",
-      entityId,
-      priority: 10,
-      payload: {
-        queryId,
-        regenerateArticles: true,
-      },
-    })
-
-    res.json({
-      queryId,
-      accepted: true,
-      mode: "rerun-articles",
-    })
+    res.json({ queryId, accepted: true, mode: "rerun-intents", orderId: order.id })
   })
 
   router.post("/query/:query_id/intents/:intent_id/rerun-article", (req, res) => {
@@ -495,45 +494,147 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       return
     }
 
-    const query = searchDB.getQueryById(queryId)
-    if (!query) {
-      res.status(404).json({ error: "query not found" })
+    const active = searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId, intentId })
+    if (active.length > 0) {
+      res.status(409).json({ code: "RESOURCE_LOCKED", activeOrderId: active[0].id })
       return
     }
 
-    const intentExists = searchDB.listIntentsByQueryId(queryId).some((intent) => intent.id === intentId)
-    if (!intentExists) {
-      res.status(404).json({ error: "intent not found for query" })
-      return
-    }
-
-    const entityId = `query:${queryId}`
-    if (llmDB.hasActiveJob("search.generate", entityId)) {
-      res.status(409).json({ error: "query generation is already running" })
-      return
-    }
-
-    llmDB.deleteEvents({
-      topic: "search.query",
-      entityId,
+    const order = searchDB.createGenerationOrder({
+      queryId,
+      intentId,
+      kind: "article_regen_keep_title",
+      requestedBy: "user",
+      requestPayload: { keepTitle: true },
     })
 
-    llmDB.enqueueJob({
-      kind: "search.generate",
-      entityId,
-      priority: 10,
-      payload: {
-        queryId,
-        regenerateArticles: true,
-        targetIntentId: intentId,
+    res.json({ queryId, accepted: true, mode: "rerun-articles", intentId, orderId: order.id })
+  })
+
+  router.get("/orders/:order_id", (req, res) => {
+    const orderId = parseQueryId(req.params.order_id)
+    if (!orderId) {
+      res.status(400).json({ error: "Invalid order_id" })
+      return
+    }
+
+    try {
+      const order = searchDB.getGenerationOrderById(orderId)
+      res.json({ order })
+    } catch {
+      res.status(404).json({ error: "order not found" })
+    }
+  })
+
+  router.get("/orders/:order_id/logs", (req, res) => {
+    const orderId = parseQueryId(req.params.order_id)
+    if (!orderId) {
+      res.status(400).json({ error: "Invalid order_id" })
+      return
+    }
+
+    try {
+      searchDB.getGenerationOrderById(orderId)
+      const logs = searchDB.listGenerationLogs(orderId)
+      res.json({ logs })
+    } catch {
+      res.status(404).json({ error: "order not found" })
+    }
+  })
+
+  router.get("/orders/:order_id/stream", (req, res) => {
+    const orderId = parseQueryId(req.params.order_id)
+    if (!orderId) {
+      res.status(400).json({ error: "Invalid order_id" })
+      return
+    }
+
+    let order: GenerationOrderRecord
+    try {
+      order = searchDB.getGenerationOrderById(orderId)
+    } catch {
+      res.status(404).json({ error: "order not found" })
+      return
+    }
+
+    res.setHeader("Content-Type", "text/event-stream")
+    res.setHeader("Cache-Control", "no-cache, no-transform")
+    res.setHeader("Connection", "keep-alive")
+    res.flushHeaders()
+
+    let isClosed = false
+
+    const finish = () => {
+      if (isClosed) return
+      isClosed = true
+      res.end()
+    }
+
+    req.on("close", finish)
+
+    const sendEvent = (seq: number, event: GenerationOrderEvent) => {
+      if (isClosed) return
+      res.write(`id: ${seq}\n`)
+      res.write(`event: ${event.type}\n`)
+      res.write(`data: ${JSON.stringify(event)}\n\n`)
+    }
+
+    const afterSeqRaw = req.header("Last-Event-ID") || req.query.afterSeq
+    const afterSeq = typeof afterSeqRaw === "string" ? Number.parseInt(afterSeqRaw, 10) : 0
+    const replay = eventDispatcher.replayAfter({ orderId, afterSeq: Number.isInteger(afterSeq) ? afterSeq : 0 })
+
+    let ended = false
+    for (const item of replay) {
+      sendEvent(item.seq, item.event)
+      if (item.event.type === "order.completed" || item.event.type === "order.failed") {
+        ended = true
+      }
+    }
+
+    if (!ended) {
+      const latest = searchDB.getGenerationOrderById(orderId)
+      if (latest.status === "completed") {
+        sendEvent(0, {
+          type: "order.completed",
+          orderId,
+          queryId: latest.queryId,
+        })
+        ended = true
+      } else if (latest.status === "failed") {
+        sendEvent(0, {
+          type: "order.failed",
+          orderId,
+          queryId: latest.queryId,
+          message: latest.errorMessage || "Order failed",
+        })
+        ended = true
+      }
+    }
+
+    if (ended) {
+      finish()
+      return
+    }
+
+    const unsubscribe = eventDispatcher.subscribe({
+      orderId,
+      send: ({ seq, event }) => {
+        sendEvent(seq, event)
+        if (event.type === "order.completed" || event.type === "order.failed") {
+          unsubscribe()
+          clearInterval(heartbeat)
+          finish()
+        }
       },
     })
 
-    res.json({
-      queryId,
-      accepted: true,
-      mode: "rerun-articles",
-      intentId,
+    const heartbeat = setInterval(() => {
+      if (!isClosed) res.write(": ping\n\n")
+    }, 15000)
+
+    req.on("close", () => {
+      clearInterval(heartbeat)
+      unsubscribe()
     })
   })
 
@@ -555,163 +656,6 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       isFirstTimeUser: searchDB.getQueryHistoryCount() === 0,
     }
     res.json(payload)
-  })
-
-  router.get("/query/:query_id/stream", (req, res) => {
-    const queryId = parseQueryId(req.params.query_id)
-    if (!queryId) {
-      res.status(400).json({ error: "Invalid query_id" })
-      return
-    }
-
-    const query = searchDB.getQueryById(queryId)
-    if (!query) {
-      res.status(404).json({ error: "query not found" })
-      return
-    }
-
-    res.setHeader("Content-Type", "text/event-stream")
-    res.setHeader("Cache-Control", "no-cache, no-transform")
-    res.setHeader("Connection", "keep-alive")
-    res.flushHeaders()
-
-    let isClosed = false
-    const requestId = typeof res.locals.requestId === "string" ? res.locals.requestId : "-"
-    const streamPath = req.originalUrl || req.url || req.path
-    logLine("info", `SSE IN  ${streamPath} query_id=${queryId} rid=${requestId}`)
-    logDebugJson(ctx.config.app.debug, {
-      event: "http.sse.in",
-      requestId,
-      path: streamPath,
-      queryId,
-    })
-
-    const finish = () => {
-      if (isClosed) return
-      isClosed = true
-      logLine("info", `SSE OUT ${streamPath} query_id=${queryId} rid=${requestId}`)
-      logDebugJson(ctx.config.app.debug, {
-        event: "http.sse.out",
-        requestId,
-        path: streamPath,
-        queryId,
-      })
-      res.end()
-    }
-
-    req.on("close", finish)
-
-    const sendEvent = (id: number, event: SearchStreamEvent) => {
-      if (isClosed) return
-      res.write(`id: ${id}\n`)
-      res.write(`event: ${event.type}\n`)
-      res.write(`data: ${JSON.stringify(event)}\n\n`)
-    }
-
-    const isTerminalEvent = (event: SearchStreamEvent): boolean =>
-      event.type === "query.completed" || event.type === "query.error"
-
-    const lastEventIdRaw = req.header("Last-Event-ID") || req.query.lastEventId
-    const lastEventId =
-      typeof lastEventIdRaw === "string" ? Number.parseInt(lastEventIdRaw, 10) : 0
-
-    const entityId = `query:${queryId}`
-    const replayEvents = Number.isInteger(lastEventId) && lastEventId >= 0
-      ? eventDispatcher.replayAfter({
-          topic: "search.query",
-          entityId,
-          lastEventId: Math.max(0, lastEventId),
-        })
-      : []
-
-    let replayEnded = false
-    for (const item of replayEvents) {
-      sendEvent(item.id, item.event)
-      if (isTerminalEvent(item.event)) {
-        replayEnded = true
-      }
-    }
-
-    if (replayEnded) {
-      finish()
-      return
-    }
-
-    const hasGeneratedContent = searchDB.hasGeneratedContent(queryId)
-    const hasActiveJob = llmDB.hasActiveJob("search.generate", entityId)
-
-    if (!hasGeneratedContent && !hasActiveJob) {
-      llmDB.enqueueJob({
-        kind: "search.generate",
-        entityId,
-        priority: 10,
-        payload: {
-          queryId,
-        },
-      })
-    }
-
-    if (hasGeneratedContent && !hasActiveJob && replayEvents.length === 0) {
-      const snapshot = searchDB.getQueryResult(queryId)
-      if (snapshot) {
-        for (const intent of snapshot.intents) {
-          sendEvent(0, {
-            type: "intent.created",
-            queryId,
-            intent: {
-              id: intent.id,
-              value: intent.intent,
-            },
-          })
-
-          for (const article of intent.articles) {
-            sendEvent(0, {
-              type: "article.created",
-              queryId,
-              intentId: intent.id,
-              article: {
-                id: article.id,
-                title: article.title,
-                slug: article.slug,
-                snippet: article.snippet,
-              },
-            })
-          }
-        }
-      }
-
-      sendEvent(0, {
-        type: "query.completed",
-        queryId,
-        replayed: true,
-      })
-      finish()
-      return
-    }
-
-    const unsubscribe = eventDispatcher.subscribe({
-      topic: "search.query",
-      entityId,
-      send: ({ id, event }) => {
-        sendEvent(id, event)
-        if (isTerminalEvent(event)) {
-          unsubscribe()
-          clearInterval(heartbeat)
-          finish()
-        }
-      },
-    })
-
-    const heartbeat = setInterval(() => {
-      if (!isClosed) {
-        res.write(": ping\n\n")
-      }
-    }, 15000)
-
-    req.on("close", () => {
-      clearInterval(heartbeat)
-      unsubscribe()
-    })
   })
 
   router.get("/article", (req, res) => {

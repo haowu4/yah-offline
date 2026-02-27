@@ -1,23 +1,12 @@
 import { AppCtx } from "../../appCtx.js"
 import { logDebugJson, logLine } from "../../logging/index.js"
-import { SearchGenerateJobPayload } from "../../type/llm.js"
 import { EventDispatcher } from "./eventDispatcher.js"
 import { createSearchGenerateHandler } from "./handlers/searchGenerate.js"
 import { LLMRuntimeConfigCache } from "./runtimeConfigCache.js"
 import { createMagicApi } from "../../magic/factory.js"
 
-function parsePayload<T>(payloadJson: string): T {
-  return JSON.parse(payloadJson) as T
-}
-
-function retryDelaySecondsForAttempt(attempt: number): number {
-  if (attempt <= 1) return 2
-  if (attempt <= 2) return 5
-  return 10
-}
-
 export function startLLMWorker(appCtx: AppCtx, eventDispatcher: EventDispatcher): () => void {
-  const llmDB = appCtx.dbClients.llm()
+  const searchDB = appCtx.dbClients.search()
   const runtimeConfigCache = new LLMRuntimeConfigCache(appCtx, 5000)
   const magicApi = createMagicApi({ appCtx })
   const searchGenerateHandler = createSearchGenerateHandler({
@@ -35,42 +24,25 @@ export function startLLMWorker(appCtx: AppCtx, eventDispatcher: EventDispatcher)
     isRunning = true
 
     try {
-      llmDB.requeueExpiredRunningJobs(300)
-
-      const job = llmDB.claimNextQueuedJob()
-      if (!job) return
+      const order = searchDB.claimNextQueuedOrder()
+      if (!order) return
 
       try {
-        if (job.kind === "search.generate") {
-          await searchGenerateHandler({
-            ...parsePayload<SearchGenerateJobPayload>(job.payloadJson),
-          })
-        } else {
-          llmDB.failJob(job.id, `Unknown LLM job kind: ${job.kind}`)
-          return
-        }
-
-        llmDB.completeJob(job.id)
+        await searchGenerateHandler(order)
+        searchDB.completeGenerationOrder(order.id, {
+          kind: order.kind,
+          queryId: order.queryId,
+          intentId: order.intentId,
+        })
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown LLM worker error"
-        if (job.attempts < job.maxAttempts) {
-          llmDB.retryJob(job.id, message, retryDelaySecondsForAttempt(job.attempts))
-        } else {
-          llmDB.failJob(job.id, message)
-
-          if (job.kind === "search.generate") {
-            const payload = parsePayload<SearchGenerateJobPayload>(job.payloadJson)
-            eventDispatcher.emit({
-              topic: "search.query",
-              entityId: `query:${payload.queryId}`,
-              event: {
-                type: "query.error",
-                queryId: payload.queryId,
-                message,
-              },
-            })
-          }
-        }
+        const message = error instanceof Error ? error.message : "Unknown order worker error"
+        searchDB.failGenerationOrder(order.id, message)
+        searchDB.appendGenerationLog({
+          orderId: order.id,
+          stage: "order",
+          level: "error",
+          message,
+        })
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown LLM worker fatal error"

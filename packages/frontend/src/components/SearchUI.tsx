@@ -1,9 +1,9 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { useState } from 'react'
-import { FiCheck, FiCopy, FiMoreHorizontal, FiRefreshCw } from 'react-icons/fi'
+import { FiRefreshCw, FiTool } from 'react-icons/fi'
 import { Link } from 'react-router'
 import type { FormEvent } from 'react'
-import type { SearchIntent } from '../ctx/SearchCtx'
+import type { SearchDebugEvent, SearchIntent } from '../ctx/SearchCtx'
 import { useI18n } from '../i18n/useI18n'
 import type { ApiSearchSuggestionItem } from '../lib/api/search'
 import styles from './SearchUI.module.css'
@@ -17,6 +17,8 @@ type SearchUIProps = {
   correctedQuery: string | null
   queryIntents: SearchIntent[]
   isLoading: boolean
+  activeOrderId: number | null
+  debugEvents: SearchDebugEvent[]
   isReplayed: boolean
   error: string | null
   examples: string[]
@@ -36,6 +38,7 @@ type SearchUIProps = {
 export function SearchUI(props: SearchUIProps) {
   const { t } = useI18n()
   const [input, setInput] = useState(props.initialQuery)
+  const [showDebug, setShowDebug] = useState(false)
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -51,36 +54,48 @@ export function SearchUI(props: SearchUIProps) {
     props.correctionApplied &&
     Boolean(props.correctedQuery) &&
     !props.error
-  const normalize = (value: string) => value.trim().toLowerCase()
-
-  const [copiedArticleKey, setCopiedArticleKey] = useState<string | null>(null)
-
-  const copyArticleLink = async (path: string, key: string) => {
-    if (typeof window === 'undefined' || !navigator?.clipboard?.writeText) return
-    const url = new URL(path, window.location.origin).toString()
-    await navigator.clipboard.writeText(url)
-    setCopiedArticleKey(key)
-    window.setTimeout(() => setCopiedArticleKey((current) => (current === key ? null : current)), 1500)
-  }
 
   return (
     <div className={styles.container}>
       {props.isLoading && !isHome ? (
-        <p className={styles.statusLine}>
-          <span>{statusMessage}</span>
-          <span className={styles.statusDots} aria-hidden>
-            <span>.</span>
-            <span>.</span>
-            <span>.</span>
-          </span>
-        </p>
+        <div className={styles.statusLineRow}>
+          <p className={`${styles.statusLine} ${styles.statusLineInRow}`}>
+            <span>{statusMessage}</span>
+            <span className={styles.statusDots} aria-hidden>
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </span>
+          </p>
+          <Menu as="div" className={styles.menuWrap}>
+            <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
+              <FiTool className={styles.menuTriggerIcon} aria-hidden />
+            </MenuButton>
+            <MenuItems className={styles.menuList}>
+              <MenuItem>
+                {({ close }) => (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      close()
+                      setShowDebug((prev) => !prev)
+                    }}
+                  >
+                    <span>{showDebug ? t('search.debug.hide') : t('search.debug.show')}</span>
+                  </button>
+                )}
+              </MenuItem>
+            </MenuItems>
+          </Menu>
+        </div>
       ) : null}
       {showResultSummary ? (
         <div className={styles.statusRow}>
           <span className={styles.statusRowText}>{t('search.status.showingResults', { query: props.query })}</span>
           <Menu as="div" className={styles.menuWrap}>
             <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
-              <FiMoreHorizontal className={styles.menuTriggerIcon} aria-hidden />
+              <FiTool className={styles.menuTriggerIcon} aria-hidden />
             </MenuButton>
             <MenuItems className={styles.menuList}>
               <MenuItem disabled={props.isRerunningIntents || props.isRerunningArticles || props.isLoading}>
@@ -101,6 +116,20 @@ export function SearchUI(props: SearchUIProps) {
                   </button>
                 )}
               </MenuItem>
+              <MenuItem>
+                {({ close }) => (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      close()
+                      setShowDebug((prev) => !prev)
+                    }}
+                  >
+                    <span>{showDebug ? t('search.debug.hide') : t('search.debug.show')}</span>
+                  </button>
+                )}
+              </MenuItem>
             </MenuItems>
           </Menu>
         </div>
@@ -113,7 +142,50 @@ export function SearchUI(props: SearchUIProps) {
           </button>
         </p>
       ) : null}
-      {props.error ? <p className={styles.error}>{props.error}</p> : null}
+      {props.error ? (
+        <div className={styles.errorRow}>
+          <p className={styles.error}>{props.error}</p>
+          <Menu as="div" className={styles.menuWrap}>
+            <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
+              <FiTool className={styles.menuTriggerIcon} aria-hidden />
+            </MenuButton>
+            <MenuItems className={styles.menuList}>
+              <MenuItem disabled={props.isRerunningQuery || props.isLoading}>
+                {({ close, disabled }) => (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    disabled={disabled}
+                    onClick={async () => {
+                      close()
+                      await props.onRerunQuery()
+                    }}
+                  >
+                    <span className={styles.menuItemContent}>
+                      <FiRefreshCw className={styles.menuItemIcon} aria-hidden />
+                      <span>{props.isRerunningQuery ? t('search.action.rerunQuery.running') : t('search.action.rerunQuery')}</span>
+                    </span>
+                  </button>
+                )}
+              </MenuItem>
+              <MenuItem>
+                {({ close }) => (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      close()
+                      setShowDebug((prev) => !prev)
+                    }}
+                  >
+                    <span>{showDebug ? t('search.debug.hide') : t('search.debug.show')}</span>
+                  </button>
+                )}
+              </MenuItem>
+            </MenuItems>
+          </Menu>
+        </div>
+      ) : null}
 
       {isHome ? (
         <div className={styles.home}>
@@ -185,7 +257,7 @@ export function SearchUI(props: SearchUIProps) {
           <span className={styles.noResultsText}>{t('search.noResultsYet')}</span>
           <Menu as="div" className={styles.menuWrap}>
             <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
-              <FiMoreHorizontal className={styles.menuTriggerIcon} aria-hidden />
+              <FiTool className={styles.menuTriggerIcon} aria-hidden />
             </MenuButton>
             <MenuItems className={styles.menuList}>
               <MenuItem disabled={props.isRerunningQuery || props.isLoading}>
@@ -206,21 +278,86 @@ export function SearchUI(props: SearchUIProps) {
                   </button>
                 )}
               </MenuItem>
+              <MenuItem>
+                {({ close }) => (
+                  <button
+                    type="button"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      close()
+                      setShowDebug((prev) => !prev)
+                    }}
+                  >
+                    <span>{showDebug ? t('search.debug.hide') : t('search.debug.show')}</span>
+                  </button>
+                )}
+              </MenuItem>
             </MenuItems>
           </Menu>
         </div>
+      ) : null}
+      {showDebug ? (
+        <section className={styles.debugPanel}>
+          <p className={styles.debugTitle}>{t('search.debug.title')}</p>
+          <p className={styles.debugMeta}>
+            {props.activeOrderId
+              ? t('search.debug.order', { orderId: String(props.activeOrderId) })
+              : t('search.debug.orderNone')}
+          </p>
+          {props.debugEvents.length === 0 ? (
+            <p className={styles.debugEmpty}>{t('search.debug.empty')}</p>
+          ) : (
+            <ul className={styles.debugList}>
+              {props.debugEvents.map((event, index) => (
+                <li key={`${event.at}-${index}`} className={styles.debugItem}>
+                  <span className={styles.debugItemTime}>{event.at}</span>
+                  <span>{event.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       ) : null}
 
       {hasResults ? (
         <div className={styles.grid}>
           {props.queryIntents.map((intent) => {
-            const firstArticle = intent.articles[0]
-            const isDuplicateTitle =
-              firstArticle && normalize(firstArticle.title) === normalize(intent.intent)
+            const isRegenerating = props.rerunningIntentId === intent.id
 
             return (
               <section key={intent.id} className={styles.intentCard}>
-                {!isDuplicateTitle ? <h2 className={styles.intentTitle}>{intent.intent}</h2> : null}
+                <div className={styles.intentHeader}>
+                  <h2 className={styles.intentTitle}>{intent.intent}</h2>
+                  <Menu as="div" className={styles.menuWrap}>
+                    <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
+                      <FiTool className={styles.menuTriggerIcon} aria-hidden />
+                    </MenuButton>
+                    <MenuItems className={styles.menuList}>
+                      <MenuItem disabled={props.isRerunningIntents || props.isRerunningArticles || props.isLoading}>
+                        {({ close, disabled }) => (
+                          <button
+                            type="button"
+                            className={styles.menuItem}
+                            disabled={disabled}
+                            onClick={async () => {
+                              close()
+                              await props.onRerunArticle(intent.id)
+                            }}
+                          >
+                            <span className={styles.menuItemContent}>
+                              <FiRefreshCw className={styles.menuItemIcon} aria-hidden />
+                              <span>
+                                {isRegenerating
+                                  ? t('search.action.rerunArticles.running')
+                                  : t('search.action.rerunArticles')}
+                              </span>
+                            </span>
+                          </button>
+                        )}
+                      </MenuItem>
+                    </MenuItems>
+                  </Menu>
+                </div>
                 {intent.isLoading ? (
                   <p className={styles.intentStatus}>
                     <span>{t('search.intent.finalizing')}</span>
@@ -242,74 +379,12 @@ export function SearchUI(props: SearchUIProps) {
                 <ul className={styles.articleList}>
                   {intent.articles.map((article) => (
                     <li key={article.id} className={styles.articleItem}>
-                      {(() => {
-                        const articlePath = `/content/${article.slug}?query=${encodeURIComponent(props.requestedQuery || props.query)}${props.language && props.language !== 'auto' ? `&lang=${encodeURIComponent(props.language)}` : ''}`
-                        const menuKey = `${intent.id}-${article.id}`
-                        const isRegenerating = props.rerunningIntentId === intent.id
-
-                        return (
-                          <div className={styles.articleHeader}>
-                            <Link to={articlePath} className={styles.articleLink}>
-                              {article.title}
-                            </Link>
-                            <Menu as="div" className={styles.menuWrap}>
-                              <MenuButton type="button" className={styles.menuTrigger} aria-label={t('search.action.more')}>
-                                <FiMoreHorizontal className={styles.menuTriggerIcon} aria-hidden />
-                              </MenuButton>
-                              <MenuItems className={styles.menuList}>
-                                <MenuItem disabled={props.isRerunningIntents || props.isRerunningArticles || props.isLoading}>
-                                  {({ close, disabled }) => (
-                                    <button
-                                      type="button"
-                                      className={styles.menuItem}
-                                      disabled={disabled}
-                                      onClick={async () => {
-                                        close()
-                                        await props.onRerunArticle(intent.id)
-                                      }}
-                                    >
-                                      <span className={styles.menuItemContent}>
-                                        <FiRefreshCw className={styles.menuItemIcon} aria-hidden />
-                                        <span>
-                                          {isRegenerating
-                                            ? t('search.action.rerunArticles.running')
-                                            : t('search.action.rerunArticles')}
-                                        </span>
-                                      </span>
-                                    </button>
-                                  )}
-                                </MenuItem>
-                                <div className={styles.menuDivider} role="separator" />
-                                <MenuItem>
-                                  {({ close }) => (
-                                    <button
-                                      type="button"
-                                      className={styles.menuItem}
-                                      onClick={async () => {
-                                        close()
-                                        await copyArticleLink(articlePath, menuKey)
-                                      }}
-                                    >
-                                      <span className={styles.menuItemContent}>
-                                        {copiedArticleKey === menuKey ? (
-                                          <FiCheck className={styles.menuItemIcon} aria-hidden />
-                                        ) : (
-                                          <FiCopy className={styles.menuItemIcon} aria-hidden />
-                                        )}
-                                        <span>
-                                          {copiedArticleKey === menuKey
-                                            ? t('search.action.copyLink.copied')
-                                            : t('search.action.copyLink')}
-                                        </span>
-                                      </span>
-                                    </button>
-                                  )}
-                                </MenuItem>
-                              </MenuItems>
-                            </Menu>
-                          </div>
-                        )
-                      })()}
+                      <Link
+                        to={`/content/${article.slug}?query=${encodeURIComponent(props.requestedQuery || props.query)}${props.language && props.language !== 'auto' ? `&lang=${encodeURIComponent(props.language)}` : ''}`}
+                        className={styles.articleLink}
+                      >
+                        {article.title}
+                      </Link>
                       <p className={styles.articleSnippet}>{article.snippet}</p>
                     </li>
                   ))}

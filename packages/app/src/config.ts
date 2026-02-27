@@ -1,4 +1,5 @@
 import path from "node:path"
+import fs from "node:fs"
 import { getAppDataPath } from "./utils.js"
 
 export type AppConfig = {
@@ -9,7 +10,7 @@ export type AppConfig = {
     },
 
     db: {
-        dbPath: string // env: YAH_DB_PATH default to platform idael place for data.
+        dbPath: string // always: path.join(storagePath, "yah.db")
         onDBSchemaConflict: 'backup-and-overwrite' | 'quit' // env: YAH_ON_DB_SCHEMA_CONFLICT default=quit
     }
 
@@ -17,16 +18,14 @@ export type AppConfig = {
         enableConfigRoutes: boolean // env: YAH_ENABLE_CONFIG_ROUTES default=1
         host: string // env:  YAH_HOST default=127.0.0.1
         port: number // env:  YAH_HOST default=11111
+        docsPath: string // env: YAH_DOCS_PATH default to first existing known docs path
+        publicPath: string | null // env: YAH_PUBLIC_PATH default to first existing known SPA dist path
     }
 
     api: {
         magicProvider: 'openai' | 'dev' // env: YAH_MAGIC_PROVIDER default=openai
     }
 
-}
-
-function getDefaultDBPath(): string {
-    return path.join(getAppDataPath(), "app.db")
 }
 
 function getDefaultStroagePath(): string {
@@ -68,9 +67,17 @@ function parseMagicProvider(value: string | undefined): "openai" | "dev" {
     )
 }
 
+function firstExistingPath(candidates: string[]): string | null {
+    for (const candidate of candidates) {
+        if (!candidate.trim()) continue
+        if (fs.existsSync(candidate)) return candidate
+    }
+    return null
+}
+
 export async function getAppConfig(): Promise<AppConfig> {
     const storagePath = process.env.YAH_STORAGE_PATH || getDefaultStroagePath()
-    const dbPath = process.env.YAH_DB_PATH || getDefaultDBPath()
+    const dbPath = path.join(storagePath, "yah.db")
     const onDBSchemaConflict = parseSchemaConflictMode(
         process.env.YAH_ON_DB_SCHEMA_CONFLICT
     )
@@ -82,6 +89,22 @@ export async function getAppConfig(): Promise<AppConfig> {
     const port = parsePort(process.env.YAH_PORT, 11111)
     const magicProvider = parseMagicProvider(process.env.YAH_MAGIC_PROVIDER)
     const debug = parseBoolean(process.env.YAH_DEBUG, false)
+    const docsPath =
+        process.env.YAH_DOCS_PATH ||
+        firstExistingPath([
+            path.resolve(process.cwd(), "docs"),
+            path.resolve(process.cwd(), "../../docs"),
+            path.resolve(process.cwd(), "runtime/docs"),
+        ]) ||
+        path.resolve(process.cwd(), "docs")
+    const publicPath =
+        process.env.YAH_PUBLIC_PATH ||
+        firstExistingPath([
+            path.resolve(process.cwd(), "public"),
+            path.resolve(process.cwd(), "../frontend/dist"),
+            path.resolve(process.cwd(), "../../packages/frontend/dist"),
+            path.resolve(process.cwd(), "runtime/public"),
+        ])
 
     return {
         app: {
@@ -96,6 +119,8 @@ export async function getAppConfig(): Promise<AppConfig> {
             enableConfigRoutes,
             host,
             port,
+            docsPath,
+            publicPath,
         },
         api: {
             magicProvider,

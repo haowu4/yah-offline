@@ -1,18 +1,6 @@
+# Internal Design Note
 
-## Log features
+Canonical end-user observability docs live at:
 
-We log the following activity of users: 
-- view search content
-- upvote/downvote search content
-
-### Pages
-
-There are 1 page:
-- Search home page `/history`
- 
- ### When to log
-
-
- ## Content Stream
-
+- `docs/observability.md`
  

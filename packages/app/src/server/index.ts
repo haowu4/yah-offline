@@ -2,11 +2,14 @@ import express from "express"
 import { AppCtx } from "../appCtx.js"
 import { createConfigRouter } from "./routes/config.js"
 import { createSearchRouter } from "./routes/search.js"
+import { createGuideRouter } from "./routes/guide.js"
 import { EventDispatcher } from "./llm/eventDispatcher.js"
 import { startLLMWorker } from "./llm/worker.js"
 import { createMagicApi } from "../magic/factory.js"
 import { createRequestLogger } from "./middleware/requestLogger.js"
 import { logDebugJson, logLine } from "../logging/index.js"
+import path from "node:path"
+import fs from "node:fs"
 
 export function createServer(appCtx: AppCtx) {
     const app = express()
@@ -19,7 +22,21 @@ export function createServer(appCtx: AppCtx) {
         app.use("/api/config", createConfigRouter(appCtx))
     }
 
+    app.use("/api/guide", createGuideRouter(appCtx))
     app.use("/api", createSearchRouter(appCtx, eventDispatcher, magicApi))
+
+    const publicPath = appCtx.config.server.publicPath
+    if (publicPath && fs.existsSync(publicPath)) {
+        app.use(express.static(publicPath))
+        app.get("*", (req, res, next) => {
+            if (req.path.startsWith("/api/")) {
+                next()
+                return
+            }
+            res.sendFile(path.join(publicPath, "index.html"))
+        })
+    }
+
     app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         const message = err instanceof Error ? err.message : "Internal server error"
         logLine("error", `HTTP ERROR ${message}`)

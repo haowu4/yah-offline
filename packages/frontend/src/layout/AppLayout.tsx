@@ -18,6 +18,7 @@ export function AppLayout() {
   const isOrderLogsPage = location.pathname.startsWith('/orders')
   const isArticleTimingPage = location.pathname.startsWith('/article-timing') || location.pathname.startsWith('/generation-performance')
   const isLLMFailuresPage = location.pathname.startsWith('/llm/failures')
+  const isGuidePage = location.pathname.startsWith('/guide')
 
   const currentSearchInput = (() => {
     if (location.pathname === '/search') {
@@ -33,7 +34,7 @@ export function AppLayout() {
     return ''
   })()
   const shouldShowNavSearch =
-    !isConfigPage && !isOrderLogsPage && !isArticleTimingPage && !isLLMFailuresPage && !(location.pathname === '/search' && currentSearchInput.trim() === '')
+    !isConfigPage && !isOrderLogsPage && !isArticleTimingPage && !isLLMFailuresPage && !isGuidePage && !(location.pathname === '/search' && currentSearchInput.trim() === '')
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -81,6 +82,11 @@ export function AppLayout() {
   const goToArticleTiming = () => {
     setIsMenuOpen(false)
     navigate('/generation-performance')
+  }
+
+  const goToGuides = () => {
+    setIsMenuOpen(false)
+    navigate('/guide')
   }
 
   const goToOrderLogs = () => {
@@ -169,26 +175,22 @@ export function AppLayout() {
                 </button>
                 <button
                   type="button"
+                  onClick={goToGuides}
+                  className={`${styles.menuItem} ${isGuidePage ? styles.menuItemActive : ''}`}
+                  role="menuitem"
+                >
+                  <span className={styles.menuItemText}>
+                    <span className={styles.menuItemLabel}>{t('layout.menu.guides')}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
                   onClick={goToLLMFailures}
                   className={`${styles.menuItem} ${isLLMFailuresPage ? styles.menuItemActive : ''}`}
                   role="menuitem"
                 >
                   <span className={styles.menuItemText}>
                     <span className={styles.menuItemLabel}>{t('layout.menu.llmFailures')}</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={styles.menuItem}
-                  role="menuitem"
-                  disabled
-                  aria-disabled="true"
-                >
-                  <span className={styles.menuItemText}>
-                    <span className={styles.menuItemLabel}>{t('layout.menu.guides')}</span>
-                  </span>
-                  <span className={styles.menuItemMeta}>
-                    <span className={styles.menuMetaBadge}>{t('layout.menu.soon')}</span>
                   </span>
                 </button>
               </div>

@@ -12,14 +12,49 @@ import { getAppDataPath } from "./utils.js"
 import { ConfigClient } from "./db/clients/config.js"
 import { getPresetValues, parsePresetName, type PresetName } from "./configPreset.js"
 
-dotenv.config({ path: path.join(getAppDataPath(), ".env") })
-dotenv.config({ path: path.join(process.cwd(), ".env"), override: true })
+dotenv.config({ path: path.join(getAppDataPath(), ".env"), quiet: true })
+dotenv.config({ path: path.join(process.cwd(), ".env"), override: true, quiet: true })
+
+const DEFAULT_ENV_TEMPLATE = `# yah environment configuration
+# Lines are commented by default. Uncomment and set values as needed.
+#
+# Typical first-run steps:
+# 1) Run: npx @ootc/yah config preset openai
+# 2) Uncomment one provider API key below.
+
+# Provider API keys
+# OPENAI_API_KEY=
+# ZAI_API_KEY=
+# DEEPSEEK_API_KEY=
+# MOONSHOT_API_KEY=
+
+# Server
+# YAH_HOST=127.0.0.1
+# YAH_PORT=11111
+# YAH_ENABLE_CONFIG_ROUTES=1
+# YAH_DEBUG=0
+
+# Runtime paths
+# YAH_STORAGE_PATH=
+# YAH_DOCS_PATH=
+# YAH_PUBLIC_PATH=
+
+# API provider
+# YAH_MAGIC_PROVIDER=openai
+
+# DB schema conflict mode
+# YAH_ON_DB_SCHEMA_CONFLICT=quit
+`
 
 
 function printUsage() {
     console.log("Usage:")
     console.log("  yah start")
+    console.log("  yah db init")
     console.log("  yah db reset [--yes]")
+    console.log("  yah env edit")
+    console.log("  yah env location")
+    console.log("  yah config list")
     console.log("  yah config get <key>")
     console.log("  yah config set <key> -v <value>")
     console.log("  yah config set <key> -e")
@@ -54,6 +89,19 @@ function readValueFromEditor(initialValue = ""): string {
     const value = fs.readFileSync(tempFile, "utf8").replace(/\n$/, "")
     fs.rmSync(tempDir, { recursive: true, force: true })
     return value
+}
+
+function editFileInEditor(filePath: string) {
+    const editor = process.env.EDITOR || "vi"
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, DEFAULT_ENV_TEMPLATE, "utf8")
+    }
+    const result = spawnSync(editor, [filePath], { stdio: "inherit" })
+    if (result.error) throw result.error
+    if (result.status !== 0) {
+        throw new Error(`Editor exited with status ${result.status}`)
+    }
 }
 
 function parseSetValueArgs(args: string[]): { value: string } {
@@ -112,6 +160,11 @@ async function main() {
 
     if (command === "db") {
         const subCommand = args[1]
+        if (subCommand === "init") {
+            appCtx.getDB()
+            console.log("Database initialized.")
+            return
+        }
         if (subCommand !== "reset") {
             printUsage()
             process.exitCode = 1
@@ -133,6 +186,22 @@ async function main() {
         return
     }
 
+    if (command === "env") {
+        const subCommand = args[1]
+        const envPath = path.join(getAppDataPath(), ".env")
+        if (subCommand === "location") {
+            console.log(envPath)
+            return
+        }
+        if (subCommand !== "edit") {
+            printUsage()
+            process.exitCode = 1
+            return
+        }
+        editFileInEditor(envPath)
+        return
+    }
+
     if (command === "config") {
         const subCommand = args[1]
         if (!subCommand) {
@@ -142,6 +211,19 @@ async function main() {
         }
 
         const configClient = appCtx.dbClients.config()
+
+        if (subCommand === "list") {
+            const configs = configClient.listConfigs()
+            if (configs.length === 0) return
+            for (const item of configs) {
+                if (item.description.trim()) {
+                    console.log(`${item.key}=${item.value}  # ${item.description}`)
+                } else {
+                    console.log(`${item.key}=${item.value}`)
+                }
+            }
+            return
+        }
 
         if (subCommand === "preset") {
             const preset = parsePresetName(args[2])

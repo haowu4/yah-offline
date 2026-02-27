@@ -6,6 +6,8 @@ import { ConfigPage } from "./pages/ConfigPage";
 import { LLMFailuresPage } from "./pages/LLMFailuresPage";
 import { OrderLogsPage } from "./pages/OrderLogsPage";
 import { ArticleTimingPage } from "./pages/ArticleTimingPage";
+import { GuideIndexPage } from "./pages/GuideIndexPage";
+import { GuideDocPage } from "./pages/GuideDocPage";
 import styles from "./routes.module.css";
 
 export function AppRoutes() {
@@ -17,6 +19,8 @@ export function AppRoutes() {
                     <Route path="/search" element={<SearchPage />} />
                     <Route path="/config" element={<ConfigPage />} />
                     <Route path="/orders" element={<OrderLogsPage />} />
+                    <Route path="/guide" element={<GuideIndexPage />} />
+                    <Route path="/guide/:slug" element={<GuideDocPage />} />
                     <Route path="/generation-performance" element={<ArticleTimingPage />} />
                     <Route path="/article-timing" element={<Navigate to="/generation-performance" replace />} />
                     <Route path="/llm/failures" element={<LLMFailuresPage />} />

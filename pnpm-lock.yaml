@@ -57,9 +57,12 @@ importers:
 
   packages/frontend:
     dependencies:
+      '@headlessui/react':
+        specifier: ^2.2.9
+        version: 2.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@ootc/markdown':
-        specifier: ^0.0.5
-        version: 0.0.5(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: ^0.0.6
+        version: 0.0.6(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-query':
         specifier: ^5.90.17
         version: 5.90.21(react@19.2.4)
@@ -482,8 +485,8 @@ packages:
   '@mermaid-js/parser@0.6.3':
     resolution: {integrity: sha512-lnjOhe7zyHjc+If7yT4zoedx2vo4sHaTmtkl1+or8BRTnCtDmcTpAjpzDSfCZrshM5bCoz0GyidzadJAH1xobA==}
 
-  '@ootc/markdown@0.0.5':
-    resolution: {integrity: sha512-ZHrKFOZeDfNtVPhTDH5cTkEmhrxAFWKIH9xsgP3Ld0RSiO1rEQdsA9olRg2ddCu0UkGlCozKvN0RwLt9A0Jchw==}
+  '@ootc/markdown@0.0.6':
+    resolution: {integrity: sha512-lRCW+MkqXqoFWwlMrGD6gESEk7gQMy8ujOyqdHBa7iSAT8tUKaObxyl2N5/GZfMBtjzGj6ngowVpCTx3ymsGxQ==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -3049,7 +3052,7 @@ snapshots:
     dependencies:
       langium: 3.3.1
 
-  '@ootc/markdown@0.0.5(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@ootc/markdown@0.0.6(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@headlessui/react': 2.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@wooorm/starry-night': 3.9.0

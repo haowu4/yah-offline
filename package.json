@@ -1,10 +1,15 @@
 {
-  "name": "@ootc/yah",
+  "name": "@ootc/yah-workspace",
+  "private": true,
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:frontend": "pnpm -C packages/frontend build",
+    "build:app": "pnpm -C packages/app build",
+    "bundle:runtime": "node packages/app/scripts/bundle-runtime.mjs",
+    "build": "pnpm build:frontend && pnpm build:app && pnpm bundle:runtime",
+    "start:single": "YAH_PUBLIC_PATH=runtime/public YAH_DOCS_PATH=runtime/docs pnpm -C packages/app start"
   },
   "keywords": [],
   "author": "",

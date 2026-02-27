@@ -1,0 +1,10 @@
+{
+  "order": [
+    "getting-started",
+    "how-to-search",
+    "config-reference",
+    "cli-reference",
+    "observability",
+    "troubleshooting"
+  ]
+}

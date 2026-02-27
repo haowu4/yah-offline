@@ -234,7 +234,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     run: () => Promise<T>
   }): Promise<T> => {
     const retryMaxAttempts = parsePositiveIntOrDefault(configDB.getValue("llm.retry.max_attempts"), 2)
-    const timeoutMs = parsePositiveIntOrDefault(configDB.getValue("llm.retry.timeout_ms"), 40000)
+    const timeoutMs = parsePositiveIntOrDefault(configDB.getValue("llm.request.timeout_ms"), 100000)
     let lastError: unknown = null
 
     for (let attempt = 1; attempt <= retryMaxAttempts; attempt += 1) {
@@ -252,6 +252,22 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
         lastError = error
         const durationMs = Date.now() - startMs
         const details = errorDetails(error)
+        const storedDetails = errorStorageDetails(error)
+        const isTimeout = details.errorMessage.includes("timed out")
+        if (isTimeout) {
+          const llmDetails = (storedDetails.llmDetails as Record<string, unknown> | undefined) || {}
+          if (!llmDetails.requestBody) {
+            llmDetails.requestBody = {
+              model: configDB.getValue("search.spelling_correction.model"),
+              stream: false,
+              input: {
+                query: args.query,
+              },
+              note: "timeout captured before provider response; this is a reconstructed request snapshot",
+            }
+          }
+          storedDetails.llmDetails = llmDetails
+        }
         llmDB.createFailure({
           provider: magicApi.providerName({}),
           component: "search.router",
@@ -263,7 +279,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
           durationMs,
           errorName: details.errorName,
           errorMessage: details.errorMessage,
-          details: errorStorageDetails(error),
+          details: storedDetails,
         })
         logLine(
           "error",
@@ -289,12 +305,50 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     }
 
     const spellModeDefault = parseSpellCorrectionMode(
-      configDB.getValue("search.spell_correction_mode"),
+      configDB.getValue("search.spelling_correction.mode"),
       "auto"
     )
     const spellCorrectionMode = parseSpellCorrectionMode(req.body?.spellCorrectionMode, spellModeDefault)
 
     try {
+      const existingQuery = searchDB.getQueryByValueAndLanguage(originalQueryValue, language)
+      if (existingQuery) {
+        const recentMinChars = parsePositiveIntOrDefault(configDB.getValue("search.recent.min_query_chars"), 3)
+        const recentDedupeWindowSeconds = parsePositiveIntOrDefault(
+          configDB.getValue("search.recent.dedupe_window_seconds"),
+          300
+        )
+        const recentBlacklistTerms = parseStringArrayOrFallback(
+          configDB.getValue("search.recent.blacklist_terms"),
+          fallbackRecentBlacklistTerms
+        )
+        if (
+          shouldTrackRecentQuery({
+            query: existingQuery.value,
+            minChars: recentMinChars,
+            blacklistTerms: recentBlacklistTerms,
+          })
+        ) {
+          searchDB.createQueryHistory({
+            queryText: existingQuery.value,
+            language,
+            queryId: existingQuery.id,
+            dedupeWindowSeconds: recentDedupeWindowSeconds,
+          })
+        }
+
+        res.json({
+          queryId: existingQuery.id,
+          query: existingQuery.value,
+          originalQuery: originalQueryValue,
+          correctionApplied: false,
+          correctedQuery: null,
+          language,
+          spellCorrectionMode,
+        })
+        return
+      }
+
       let correctedCandidate = ""
       if (spellCorrectionMode !== "off") {
         const cached = searchDB.getSpellCorrection({
@@ -565,16 +619,24 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
 
   router.get("/orders", (req, res) => {
     const limitRaw = typeof req.query.limit === "string" ? req.query.limit : null
+    const offsetRaw = typeof req.query.offset === "string" ? req.query.offset : null
     const limit = parsePositiveIntOrDefault(limitRaw, 120)
+    const offset = parsePositiveIntOrDefault(offsetRaw, 0)
     const status = parseOrderStatus(req.query.status)
     const kind = parseOrderKind(req.query.kind)
 
     const orders = searchDB.listGenerationOrders({
       limit,
+      offset,
+      status: status ?? undefined,
+      kind: kind ?? undefined,
+    })
+    const total = searchDB.countGenerationOrders({
       status: status ?? undefined,
       kind: kind ?? undefined,
     })
     res.json({
+      pagination: { limit, offset, total },
       orders: orders.map((order) => {
         const query = searchDB.getQueryById(order.queryId)
         const intent = order.intentId ? searchDB.getIntentById(order.intentId) : null
@@ -605,18 +667,26 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
 
   router.get("/llm/failures", (req, res) => {
     const limitRaw = typeof req.query.limit === "string" ? req.query.limit : null
+    const offsetRaw = typeof req.query.offset === "string" ? req.query.offset : null
     const limit = parsePositiveIntOrDefault(limitRaw, 120)
+    const offset = parsePositiveIntOrDefault(offsetRaw, 0)
     const provider = typeof req.query.provider === "string" ? req.query.provider.trim() : ""
     const trigger = typeof req.query.trigger === "string" ? req.query.trigger.trim() : ""
     const component = typeof req.query.component === "string" ? req.query.component.trim() : ""
 
     const failures = llmDB.listFailures({
       limit,
+      offset,
       provider: provider || undefined,
       trigger: trigger || undefined,
       component: component || undefined,
     })
-    res.json({ failures })
+    const total = llmDB.countFailures({
+      provider: provider || undefined,
+      trigger: trigger || undefined,
+      component: component || undefined,
+    })
+    res.json({ pagination: { limit, offset, total }, failures })
   })
 
   router.get("/orders/:order_id/stream", (req, res) => {

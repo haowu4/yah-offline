@@ -19,6 +19,11 @@ export type ApiLLMFailure = {
 }
 
 export type ApiLLMFailuresResponse = {
+  pagination: {
+    limit: number
+    offset: number
+    total: number
+  }
   failures: ApiLLMFailure[]
 }
 
@@ -41,6 +46,7 @@ async function apiFetch<T>(path: string): Promise<T> {
 
 export async function listLLMFailures(args?: {
   limit?: number
+  offset?: number
   provider?: string
   trigger?: string
   component?: string
@@ -48,6 +54,9 @@ export async function listLLMFailures(args?: {
   const params = new URLSearchParams()
   if (args?.limit && Number.isInteger(args.limit) && args.limit > 0) {
     params.set('limit', String(args.limit))
+  }
+  if (typeof args?.offset === 'number' && Number.isInteger(args.offset) && args.offset >= 0) {
+    params.set('offset', String(args.offset))
   }
   if (args?.provider) params.set('provider', args.provider)
   if (args?.trigger) params.set('trigger', args.trigger)

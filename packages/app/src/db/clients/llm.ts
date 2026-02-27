@@ -361,11 +361,13 @@ export class LLMDBClient {
 
   listFailures(args?: {
     limit?: number
+    offset?: number
     provider?: string
     trigger?: string
     component?: string
   }): LLMFailureRecord[] {
     const limit = args?.limit && args.limit > 0 ? Math.min(args.limit, 500) : 100
+    const offset = args?.offset && args.offset > 0 ? args.offset : 0
     const provider = args?.provider?.trim() || null
     const trigger = args?.trigger?.trim() || null
     const component = args?.component?.trim() || null
@@ -382,9 +384,10 @@ export class LLMDBClient {
             AND (? IS NULL OR component = ?)
           ORDER BY id DESC
           LIMIT ?
+          OFFSET ?
         `
       )
-      .all(provider, provider, trigger, trigger, component, component, limit) as Array<{
+      .all(provider, provider, trigger, trigger, component, component, limit, offset) as Array<{
       id: number
       provider: string
       component: string
@@ -423,5 +426,29 @@ export class LLMDBClient {
       detailsJson: row.details_json,
       createdAt: row.created_at,
     }))
+  }
+
+  countFailures(args?: {
+    provider?: string
+    trigger?: string
+    component?: string
+  }): number {
+    const provider = args?.provider?.trim() || null
+    const trigger = args?.trigger?.trim() || null
+    const component = args?.component?.trim() || null
+
+    const row = this.db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM llm_failure
+          WHERE (? IS NULL OR provider = ?)
+            AND (? IS NULL OR trigger = ?)
+            AND (? IS NULL OR component = ?)
+        `
+      )
+      .get(provider, provider, trigger, trigger, component, component) as { count: number } | undefined
+
+    return row?.count ?? 0
   }
 }

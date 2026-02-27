@@ -48,6 +48,7 @@ export const migrations: Migration[] = [
             title TEXT NOT NULL,
             slug TEXT NOT NULL UNIQUE,
             content TEXT NOT NULL,
+            generated_by TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 

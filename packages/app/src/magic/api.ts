@@ -9,6 +9,7 @@ export type MagicSearchArticleResult = {
     title: string
     slug: string
     content: string
+    generatedBy: string
   }
 }
 

@@ -35,8 +35,8 @@ export class LLMRuntimeConfigCache {
         2
       ),
       llmRequestTimeoutMs: parsePositiveIntOrDefault(
-        configDB.getValue("llm.retry.timeout_ms"),
-        40000
+        configDB.getValue("llm.request.timeout_ms"),
+        100000
       ),
     }
 

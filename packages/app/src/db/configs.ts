@@ -45,12 +45,12 @@ export const DefaultConfigs: {
         description: "LLM model used for search spelling correction.",
     },
     {
-        key: "search.spell_correction_mode",
+        key: "search.spelling_correction.mode",
         value: "auto",
         description: "Spell correction mode for search query normalization: off|auto|force.",
     },
     {
-        key: "llm.baseurl",
+        key: "llm.base_url",
         value: "",
         description: "Optional OpenAI-compatible base URL used by LLM calls. Leave empty for default OpenAI endpoint.",
     },
@@ -182,9 +182,14 @@ export const DefaultConfigs: {
         description: "Exact query terms excluded from recent history chips (JSON array, case-insensitive).",
     },
     {
-        key: "llm.apikey.env_name",
+        key: "llm.api_key.env_name",
         value: "OPENAI_API_KEY",
         description: "Environment variable name used to read API key for LLM calls.",
+    },
+    {
+        key: "llm.tool_choice.mode",
+        value: "force",
+        description: "Tool-call selection strategy for structured LLM requests: force|auto.",
     },
     {
         key: "llm.retry.max_attempts",
@@ -192,8 +197,8 @@ export const DefaultConfigs: {
         description: "Maximum attempts for LLM generation calls before giving up.",
     },
     {
-        key: "llm.retry.timeout_ms",
-        value: "40000",
-        description: "Per-attempt timeout in milliseconds for LLM generation calls.",
+        key: "llm.request.timeout_ms",
+        value: "100000",
+        description: "Per-request timeout in milliseconds for LLM generation calls.",
     },
 ]

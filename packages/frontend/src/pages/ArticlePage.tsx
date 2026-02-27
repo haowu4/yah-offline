@@ -165,6 +165,11 @@ export function ArticlePage() {
             <p className={styles.createdAt}>
               {t('article.meta.createdAt', { value: createdAtLabel })}
             </p>
+            {article.generatedBy ? (
+              <p className={styles.generatedBy}>
+                {t('article.meta.generatedBy', { value: article.generatedBy })}
+              </p>
+            ) : null}
           </div>
           {canRegenerate ? (
             <button

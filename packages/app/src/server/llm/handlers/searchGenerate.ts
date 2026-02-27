@@ -80,6 +80,26 @@ export function createSearchGenerateHandler(args: {
         lastError = error
         const durationMs = Date.now() - startMs
         const details = errorDetails(error)
+        const storedDetails = errorStorageDetails(error)
+        const isTimeout = details.errorMessage.includes("timed out")
+        if (isTimeout) {
+          const llmDetails = (storedDetails.llmDetails as Record<string, unknown> | undefined) || {}
+          if (!llmDetails.requestBody) {
+            llmDetails.requestBody = {
+              model:
+                callArgs.trigger === "intent-generation"
+                  ? configDB.getValue("search.intent_resolve.model")
+                  : configDB.getValue("search.content_generation.model"),
+              stream: false,
+              input: {
+                query: callArgs.query,
+                intent: callArgs.intent ?? null,
+              },
+              note: "timeout captured before provider response; this is a reconstructed request snapshot",
+            }
+          }
+          storedDetails.llmDetails = llmDetails
+        }
         llmDB.createFailure({
           provider: args.magicApi.providerName({}),
           component: "search.worker",
@@ -98,7 +118,7 @@ export function createSearchGenerateHandler(args: {
           durationMs,
           errorName: details.errorName,
           errorMessage: details.errorMessage,
-          details: errorStorageDetails(error),
+          details: storedDetails,
         })
         logLine(
           "error",
@@ -270,6 +290,7 @@ export function createSearchGenerateHandler(args: {
           title: articleResult.article.title,
           slug: articleResult.article.slug,
           content: articleResult.article.content,
+          generatedBy: articleResult.article.generatedBy,
           replaceExistingForIntent: true,
           keepTitleWhenReplacing: shouldKeepTitle,
         })

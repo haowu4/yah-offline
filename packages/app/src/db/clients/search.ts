@@ -99,6 +99,33 @@ export class SearchDBClient {
         }
     }
 
+    getQueryByValueAndLanguage(value: string, language: string): QueryRecord | null {
+        const normalizedValue = value.trim()
+        const normalizedLanguage = language.trim()
+        if (!normalizedValue || !normalizedLanguage) return null
+
+        const row = this.db
+            .prepare(
+                `
+                SELECT id, value, language, original_value, created_at
+                FROM query
+                WHERE value = ? AND language = ?
+                `
+            )
+            .get(normalizedValue, normalizedLanguage) as
+            | { id: number; value: string; language: string; original_value: string | null; created_at: string }
+            | undefined
+
+        if (!row) return null
+        return {
+            id: row.id,
+            value: row.value,
+            language: row.language,
+            originalValue: row.original_value,
+            createdAt: row.created_at,
+        }
+    }
+
     getSpellCorrection(args: {
         sourceText: string
         language: string
@@ -316,6 +343,7 @@ export class SearchDBClient {
         title: string
         slug: string
         content: string
+        generatedBy?: string | null
         replaceExistingForIntent?: boolean
         keepTitleWhenReplacing?: boolean
     }): ArticleRecord {
@@ -348,22 +376,22 @@ export class SearchDBClient {
                             .prepare(
                                 `
                                 UPDATE article
-                                SET content = ?
+                                SET content = ?, generated_by = ?
                                 WHERE id = ?
                                 `
                             )
-                            .run(content, existing.id)
+                            .run(content, args.generatedBy?.trim() || null, existing.id)
                     } else {
                         const uniqueSlug = this.getUniqueSlug(args.slug, existing.id)
                         this.db
                             .prepare(
                                 `
                                 UPDATE article
-                                SET title = ?, slug = ?, content = ?
+                                SET title = ?, slug = ?, content = ?, generated_by = ?
                                 WHERE id = ?
                                 `
                             )
-                            .run(title, uniqueSlug, content, existing.id)
+                            .run(title, uniqueSlug, content, args.generatedBy?.trim() || null, existing.id)
                     }
                 }
                 return this.getArticleById(existing.id)
@@ -381,11 +409,11 @@ export class SearchDBClient {
         const result = this.db
             .prepare(
                 `
-                INSERT INTO article (title, slug, content)
-                VALUES (?, ?, ?)
+                INSERT INTO article (title, slug, content, generated_by)
+                VALUES (?, ?, ?, ?)
                 `
             )
-            .run(title, uniqueSlug, content)
+            .run(title, uniqueSlug, content, args.generatedBy?.trim() || null)
 
         const articleId = result.lastInsertRowid as number
         if (intentId !== null) {
@@ -425,6 +453,7 @@ export class SearchDBClient {
                     a.title,
                     a.slug,
                     a.content,
+                    a.generated_by,
                     a.created_at,
                     (
                         SELECT qia.intent_id
@@ -444,6 +473,7 @@ export class SearchDBClient {
                   title: string
                   slug: string
                   content: string
+                  generated_by: string | null
                   created_at: string
               }
             | undefined
@@ -458,6 +488,7 @@ export class SearchDBClient {
             title: row.title,
             slug: row.slug,
             content: row.content,
+            generatedBy: row.generated_by,
             createdAt: row.created_at,
         }
     }
@@ -471,7 +502,7 @@ export class SearchDBClient {
             const articleRows = this.db
                 .prepare(
                     `
-                    SELECT a.id, a.title, a.slug, a.content, a.created_at
+                    SELECT a.id, a.title, a.slug, a.content, a.generated_by, a.created_at
                     FROM query_intent_article qia
                     JOIN article a ON a.id = qia.article_id
                     WHERE qia.intent_id = ?
@@ -483,6 +514,7 @@ export class SearchDBClient {
                 title: string
                 slug: string
                 content: string
+                generated_by: string | null
                 created_at: string
             }>
 
@@ -494,6 +526,7 @@ export class SearchDBClient {
                     title: article.title,
                     slug: article.slug,
                     snippet: this.toSnippet(article.content),
+                    generatedBy: article.generated_by,
                     createdAt: article.created_at,
                 })),
             }
@@ -510,7 +543,7 @@ export class SearchDBClient {
             .prepare(
                 `
                 WITH article_target AS (
-                    SELECT a.id, a.title, a.slug, a.content, a.created_at
+                    SELECT a.id, a.title, a.slug, a.content, a.generated_by, a.created_at
                     FROM article a
                     WHERE a.slug = ?
                     LIMIT 1
@@ -532,6 +565,7 @@ export class SearchDBClient {
                     at.title AS article_title,
                     at.slug AS article_slug,
                     at.content AS article_content,
+                    at.generated_by AS article_generated_by,
                     at.created_at AS article_created_at,
                     pl.intent_id AS intent_id,
                     pl.intent_value AS intent_value,
@@ -551,6 +585,7 @@ export class SearchDBClient {
                   article_title: string
                   article_slug: string
                   article_content: string
+                  article_generated_by: string | null
                   article_created_at: string
                   intent_id: number | null
                   intent_value: string | null
@@ -589,6 +624,7 @@ export class SearchDBClient {
                 title: row.article_title,
                 slug: row.article_slug,
                 content: row.article_content,
+                generatedBy: row.article_generated_by,
                 createdAt: row.article_created_at,
             },
             relatedIntents: relatedRows.map((relatedRow) => ({
@@ -829,10 +865,12 @@ export class SearchDBClient {
 
     listGenerationOrders(args?: {
         limit?: number
+        offset?: number
         status?: GenerationOrderStatus
         kind?: GenerationOrderKind
     }): GenerationOrderRecord[] {
         const limit = args?.limit && args.limit > 0 ? Math.min(args.limit, 500) : 120
+        const offset = args?.offset && args.offset > 0 ? args.offset : 0
         const status = args?.status || null
         const kind = args?.kind || null
 
@@ -846,9 +884,10 @@ export class SearchDBClient {
                   AND (? IS NULL OR kind = ?)
                 ORDER BY id DESC
                 LIMIT ?
+                OFFSET ?
                 `
             )
-            .all(status, status, kind, kind, limit) as Array<{
+            .all(status, status, kind, kind, limit, offset) as Array<{
                 id: number
                 query_id: number
                 kind: GenerationOrderKind
@@ -865,6 +904,25 @@ export class SearchDBClient {
             }>
 
         return rows.map((row) => this.toGenerationOrder(row))
+    }
+
+    countGenerationOrders(args?: {
+        status?: GenerationOrderStatus
+        kind?: GenerationOrderKind
+    }): number {
+        const status = args?.status || null
+        const kind = args?.kind || null
+        const row = this.db
+            .prepare(
+                `
+                SELECT COUNT(*) AS count
+                FROM generation_order
+                WHERE (? IS NULL OR status = ?)
+                  AND (? IS NULL OR kind = ?)
+                `
+            )
+            .get(status, status, kind, kind) as { count: number } | undefined
+        return row?.count ?? 0
     }
 
     listActiveOrdersForScope(args: {

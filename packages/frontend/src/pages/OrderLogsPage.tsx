@@ -1,72 +1,85 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { FiChevronDown, FiChevronRight } from 'react-icons/fi'
 import { getGenerationOrderLogs, listGenerationOrders, type ApiGenerationOrder, type ApiGenerationOrderLog } from '../lib/api/order'
 import { useI18n } from '../i18n/useI18n'
 import styles from './OrderLogsPage.module.css'
 
+const PAGE_SIZE = 30
+
 export function OrderLogsPage() {
   const { t, locale } = useI18n()
   const [isLoading, setIsLoading] = useState(true)
-  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [orders, setOrders] = useState<ApiGenerationOrder[]>([])
-  const [selectedOrder, setSelectedOrder] = useState<ApiGenerationOrder | null>(null)
-  const [logs, setLogs] = useState<ApiGenerationOrderLog[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [logsByOrderId, setLogsByOrderId] = useState<Record<number, ApiGenerationOrderLog[]>>({})
+  const [loadingLogOrderIds, setLoadingLogOrderIds] = useState<Record<number, boolean>>({})
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Record<number, boolean>>({})
   const [statusFilter, setStatusFilter] = useState<ApiGenerationOrder['status'] | ''>('')
   const [kindFilter, setKindFilter] = useState<ApiGenerationOrder['kind'] | ''>('')
 
-  const loadOrders = async () => {
-    setIsLoading(true)
+  const loadOrders = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = Boolean(options?.silent)
+    if (!silent) setIsLoading(true)
     try {
       const payload = await listGenerationOrders({
-        limit: 200,
+        limit: PAGE_SIZE,
+        offset,
         status: statusFilter || undefined,
         kind: kindFilter || undefined,
       })
       setOrders(payload.orders)
+      setTotal(payload.pagination.total)
       setError(null)
-
       if (payload.orders.length === 0) {
-        setSelectedOrder(null)
-        setLogs([])
-      } else if (!selectedOrder || !payload.orders.some((order) => order.id === selectedOrder.id)) {
-        setSelectedOrder(payload.orders[0])
+        setExpandedOrderIds({})
+      } else {
+        const allowed = new Set(payload.orders.map((order) => order.id))
+        setExpandedOrderIds((prev) => {
+          const next: Record<number, boolean> = {}
+          for (const key of Object.keys(prev)) {
+            const orderId = Number(key)
+            if (allowed.has(orderId)) next[orderId] = true
+          }
+          return next
+        })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t('orderLogs.error.load'))
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
-  }
-
-  const loadLogs = async (orderId: number) => {
-    setIsLoadingLogs(true)
-    try {
-      const payload = await getGenerationOrderLogs(orderId)
-      setLogs(payload.logs)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('orderLogs.error.loadLogs'))
-    } finally {
-      setIsLoadingLogs(false)
-    }
-  }
+  }, [kindFilter, offset, statusFilter, t])
 
   useEffect(() => {
     document.title = t('orderLogs.page.title')
   }, [t])
 
   useEffect(() => {
-    void loadOrders()
+    setOffset(0)
   }, [statusFilter, kindFilter])
 
   useEffect(() => {
-    if (!selectedOrder) return
-    void loadLogs(selectedOrder.id)
-  }, [selectedOrder?.id])
+    void loadOrders()
+  }, [loadOrders])
 
-  const orderStatus = useMemo(() => {
-    if (!selectedOrder) return ''
-    return `${selectedOrder.status} · ${selectedOrder.kind}`
-  }, [selectedOrder])
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void loadOrders({ silent: true })
+    }, 2000)
+    return () => window.clearInterval(timer)
+  }, [loadOrders])
+
+  const formatTime = (value: string | null) => {
+    if (!value) return '-'
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return value
+    return new Intl.DateTimeFormat(locale, {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).format(parsed)
+  }
 
   const formatJsonBlock = (value: string | null) => {
     if (!value) return '-'
@@ -77,23 +90,43 @@ export function OrderLogsPage() {
     }
   }
 
-  const durationLabel = useMemo(() => {
-    if (!selectedOrder?.startedAt || !selectedOrder?.finishedAt) return '-'
-    const started = new Date(selectedOrder.startedAt).getTime()
-    const finished = new Date(selectedOrder.finishedAt).getTime()
-    if (!Number.isFinite(started) || !Number.isFinite(finished)) return '-'
-    const durationMs = Math.max(0, finished - started)
-    return `${durationMs}ms`
-  }, [selectedOrder?.finishedAt, selectedOrder?.startedAt])
+  const loadLogsForOrder = async (orderId: number) => {
+    if (logsByOrderId[orderId]) return
 
-  const formatTime = (value: string | null) => {
-    if (!value) return '-'
-    const parsed = new Date(value)
-    if (Number.isNaN(parsed.getTime())) return value
-    return new Intl.DateTimeFormat(locale, {
-      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
-    }).format(parsed)
+    setLoadingLogOrderIds((prev) => ({ ...prev, [orderId]: true }))
+    try {
+      const payload = await getGenerationOrderLogs(orderId)
+      setLogsByOrderId((prev) => ({ ...prev, [orderId]: payload.logs }))
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('orderLogs.error.loadLogs'))
+    } finally {
+      setLoadingLogOrderIds((prev) => ({ ...prev, [orderId]: false }))
+    }
   }
+
+  const toggleExpand = async (order: ApiGenerationOrder) => {
+    setExpandedOrderIds((prev) => ({ ...prev, [order.id]: !prev[order.id] }))
+    await loadLogsForOrder(order.id)
+  }
+
+  const copyText = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+    } catch {
+      setError('Failed to copy')
+    }
+  }
+
+  const durationLabel = (order: ApiGenerationOrder) => {
+    if (!order.startedAt || !order.finishedAt) return '-'
+    const started = new Date(order.startedAt).getTime()
+    const finished = new Date(order.finishedAt).getTime()
+    if (!Number.isFinite(started) || !Number.isFinite(finished)) return '-'
+    return `${Math.max(0, finished - started)}ms`
+  }
+
+  const visibleRows = useMemo(() => orders, [orders])
 
   return (
     <div className={styles.container}>
@@ -107,104 +140,136 @@ export function OrderLogsPage() {
       {error ? <p className={styles.error}>{error}</p> : null}
       {isLoading ? <p className={styles.status}>{t('orderLogs.loading')}</p> : null}
 
-      <div className={styles.grid}>
-        <section className={styles.section}>
-          <div className={styles.controls}>
-            <label className={styles.field}>
-              <span>{t('orderLogs.status')}</span>
-              <select className={styles.select} value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ApiGenerationOrder['status'] | '')}>
-                <option value="">{t('orderLogs.all')}</option>
-                <option value="queued">queued</option>
-                <option value="running">running</option>
-                <option value="completed">completed</option>
-                <option value="failed">failed</option>
-                <option value="cancelled">cancelled</option>
-              </select>
-            </label>
-            <label className={styles.field}>
-              <span>{t('orderLogs.kind')}</span>
-              <select className={styles.select} value={kindFilter} onChange={(event) => setKindFilter(event.target.value as ApiGenerationOrder['kind'] | '')}>
-                <option value="">{t('orderLogs.all')}</option>
-                <option value="query_full">query_full</option>
-                <option value="intent_regen">intent_regen</option>
-                <option value="article_regen_keep_title">article_regen_keep_title</option>
-              </select>
-            </label>
-          </div>
-          <div className={styles.orderList}>
-            {orders.map((order) => (
-              <button
-                key={order.id}
-                type="button"
-                className={`${styles.orderItem} ${selectedOrder?.id === order.id ? styles.orderItemActive : ''}`}
-                onClick={() => setSelectedOrder(order)}
-              >
-                <div className={styles.orderItemTop}>
-                  <strong>#{order.id}</strong>
-                  <span className={styles.badge}>{order.status}</span>
-                </div>
-                <div className={styles.orderItemSub}>{order.kind}</div>
-                <div className={styles.orderItemSub}>
-                  query: {order.query?.value || `#${order.queryId}`}
-                </div>
-                <div className={styles.orderItemSub}>
-                  intent: {order.intent?.value || (order.intentId ? `#${order.intentId}` : '-')}
-                </div>
-                <div className={styles.orderItemSub}>{formatTime(order.createdAt)}</div>
-              </button>
-            ))}
-            {!isLoading && orders.length === 0 ? <p className={styles.status}>{t('orderLogs.empty')}</p> : null}
-          </div>
-        </section>
+      <section className={styles.section}>
+        <div className={styles.controls}>
+          <label className={styles.field}>
+            <span>{t('orderLogs.status')}</span>
+            <select className={styles.select} value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ApiGenerationOrder['status'] | '')}>
+              <option value="">{t('orderLogs.all')}</option>
+              <option value="queued">queued</option>
+              <option value="running">running</option>
+              <option value="completed">completed</option>
+              <option value="failed">failed</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+          </label>
+          <label className={styles.field}>
+            <span>{t('orderLogs.kind')}</span>
+            <select className={styles.select} value={kindFilter} onChange={(event) => setKindFilter(event.target.value as ApiGenerationOrder['kind'] | '')}>
+              <option value="">{t('orderLogs.all')}</option>
+              <option value="query_full">query_full</option>
+              <option value="intent_regen">intent_regen</option>
+              <option value="article_regen_keep_title">article_regen_keep_title</option>
+            </select>
+          </label>
+        </div>
 
-        <section className={styles.section}>
-          {!selectedOrder ? (
-            <p className={styles.status}>{t('orderLogs.select')}</p>
-          ) : (
-            <>
-              <div className={styles.detailHeader}>
-                <h2 className={styles.detailTitle}>{t('orderLogs.order', { id: String(selectedOrder.id) })}</h2>
-                <span className={styles.detailMeta}>{orderStatus}</span>
-              </div>
-              <div className={styles.detailMetaList}>
-                <span>{t('orderLogs.requestedBy')}: {selectedOrder.requestedBy}</span>
-                <span>{t('orderLogs.queryId')}: {selectedOrder.queryId}</span>
-                <span>{t('orderLogs.query')}: {selectedOrder.query?.value || '-'}</span>
-                <span>{t('orderLogs.intentId')}: {selectedOrder.intentId ?? '-'}</span>
-                <span>{t('orderLogs.intent')}: {selectedOrder.intent?.value || '-'}</span>
-                <span>{t('orderLogs.created')}: {formatTime(selectedOrder.createdAt)}</span>
-                <span>{t('orderLogs.started')}: {formatTime(selectedOrder.startedAt)}</span>
-                <span>{t('orderLogs.finished')}: {formatTime(selectedOrder.finishedAt)}</span>
-                <span>{t('orderLogs.updated')}: {formatTime(selectedOrder.updatedAt)}</span>
-                <span>{t('orderLogs.duration')}: {durationLabel}</span>
-                {selectedOrder.errorMessage ? <span>{t('orderLogs.error')}: {selectedOrder.errorMessage}</span> : null}
-              </div>
-              <div className={styles.detailBlocks}>
-                <section className={styles.detailBlock}>
-                  <h3 className={styles.detailBlockTitle}>{t('orderLogs.requestPayload')}</h3>
-                  <pre className={styles.detailCode}>{formatJsonBlock(selectedOrder.requestPayloadJson)}</pre>
-                </section>
-                <section className={styles.detailBlock}>
-                  <h3 className={styles.detailBlockTitle}>{t('orderLogs.resultSummary')}</h3>
-                  <pre className={styles.detailCode}>{formatJsonBlock(selectedOrder.resultSummaryJson)}</pre>
-                </section>
-              </div>
-              {isLoadingLogs ? <p className={styles.status}>{t('orderLogs.loadingLogs')}</p> : null}
-              <div className={styles.logList}>
-                {logs.map((log) => (
-                  <div key={log.id} className={styles.logItem}>
-                    <span className={styles.logTime}>{formatTime(log.createdAt)}</span>
-                    <span className={styles.logLevel}>{log.level}</span>
-                    <span className={styles.logStage}>{log.stage}</span>
-                    <span className={styles.logMessage}>{log.message}</span>
+        <div className={styles.table}>
+          <div className={styles.tableHeader}>
+            <div></div>
+            <div>ID</div>
+            <div>{t('orderLogs.status')}</div>
+            <div>{t('orderLogs.kind')}</div>
+            <div>{t('orderLogs.query')}</div>
+            <div>{t('orderLogs.intent')}</div>
+            <div>{t('orderLogs.created')}</div>
+          </div>
+
+          {visibleRows.map((order) => {
+            const isExpanded = Boolean(expandedOrderIds[order.id])
+            const logs = logsByOrderId[order.id] || []
+            const isLoadingLogs = Boolean(loadingLogOrderIds[order.id])
+
+            return (
+              <div key={order.id} className={styles.rowGroup}>
+                <button
+                  type="button"
+                  className={`${styles.row} ${isExpanded ? styles.rowExpanded : ''}`}
+                  onClick={() => void toggleExpand(order)}
+                >
+                  <span className={styles.expandIcon}>{isExpanded ? <FiChevronDown /> : <FiChevronRight />}</span>
+                  <span className={styles.mono}>#{order.id}</span>
+                  <span><span className={styles.badge}>{order.status}</span></span>
+                  <span>{order.kind}</span>
+                  <span title={order.query?.value || ''}>{order.query?.value || `#${order.queryId}`}</span>
+                  <span title={order.intent?.value || ''}>{order.intent?.value || (order.intentId ? `#${order.intentId}` : '-')}</span>
+                  <span className={styles.mono}>{formatTime(order.createdAt)}</span>
+                </button>
+
+                {isExpanded ? (
+                  <div className={styles.expandedRow}>
+                    <div className={styles.metaGrid}>
+                      <span>{t('orderLogs.requestedBy')}: {order.requestedBy}</span>
+                      <span>{t('orderLogs.queryId')}: {order.queryId}</span>
+                      <span>{t('orderLogs.intentId')}: {order.intentId ?? '-'}</span>
+                      <span>{t('orderLogs.started')}: {formatTime(order.startedAt)}</span>
+                      <span>{t('orderLogs.finished')}: {formatTime(order.finishedAt)}</span>
+                      <span>{t('orderLogs.updated')}: {formatTime(order.updatedAt)}</span>
+                      <span>{t('orderLogs.duration')}: {durationLabel(order)}</span>
+                      {order.errorMessage ? <span>{t('orderLogs.error')}: {order.errorMessage}</span> : null}
+                    </div>
+
+                    <div className={styles.detailBlocks}>
+                      <section className={styles.detailBlock}>
+                        <h3 className={styles.detailBlockTitle}>
+                          {t('orderLogs.requestPayload')}
+                          <button type="button" className={styles.copyButton} onClick={() => void copyText(formatJsonBlock(order.requestPayloadJson))}>Copy</button>
+                        </h3>
+                        <pre className={styles.detailCode}>{formatJsonBlock(order.requestPayloadJson)}</pre>
+                      </section>
+                      <section className={styles.detailBlock}>
+                        <h3 className={styles.detailBlockTitle}>
+                          {t('orderLogs.resultSummary')}
+                          <button type="button" className={styles.copyButton} onClick={() => void copyText(formatJsonBlock(order.resultSummaryJson))}>Copy</button>
+                        </h3>
+                        <pre className={styles.detailCode}>{formatJsonBlock(order.resultSummaryJson)}</pre>
+                      </section>
+                    </div>
+
+                    <section className={styles.logBlock}>
+                      <h3 className={styles.detailBlockTitle}>{t('orderLogs.title')}</h3>
+                      {isLoadingLogs ? <p className={styles.status}>{t('orderLogs.loadingLogs')}</p> : null}
+                      {!isLoadingLogs && logs.length === 0 ? <p className={styles.status}>{t('orderLogs.noLogs')}</p> : null}
+                      {logs.length > 0 ? (
+                        <div className={styles.logsTable}>
+                          {logs.map((log) => (
+                            <div key={log.id} className={styles.logRow}>
+                              <span className={styles.mono}>{formatTime(log.createdAt)}</span>
+                              <span className={styles.logLevel}>{log.level}</span>
+                              <span>{log.stage}</span>
+                              <span>{log.message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
                   </div>
-                ))}
-                {!isLoadingLogs && logs.length === 0 ? <p className={styles.status}>{t('orderLogs.noLogs')}</p> : null}
+                ) : null}
               </div>
-            </>
-          )}
-        </section>
-      </div>
+            )
+          })}
+
+          {!isLoading && visibleRows.length === 0 ? (
+            <p className={styles.status}>{t('orderLogs.empty')}</p>
+          ) : null}
+        </div>
+        <div className={styles.pagination}>
+          <span className={styles.paginationText}>
+            {total === 0 ? '0' : `${offset + 1}-${Math.min(offset + PAGE_SIZE, total)} / ${total}`}
+          </span>
+          <button type="button" className={styles.pageButton} disabled={offset <= 0} onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}>
+            Prev
+          </button>
+          <button
+            type="button"
+            className={styles.pageButton}
+            disabled={offset + PAGE_SIZE >= total}
+            onClick={() => setOffset((value) => value + PAGE_SIZE)}
+          >
+            Next
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

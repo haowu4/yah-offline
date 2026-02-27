@@ -90,6 +90,7 @@ This is development-mode content for query: **${args.query}**.
 2. Run the required commands.
 3. Verify the output.
 `,
+        generatedBy: "dev:dev-search-content",
       },
     }
   }

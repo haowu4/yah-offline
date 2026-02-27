@@ -44,6 +44,7 @@ export type ApiArticleDetail = {
     title: string
     slug: string
     content: string
+    generatedBy: string | null
     createdAt: string
   }
   intent?: {

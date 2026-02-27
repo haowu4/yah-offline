@@ -18,10 +18,11 @@ export type ArticleRecord = {
     title: string
     slug: string
     content: string
+    generatedBy: string | null
     createdAt: string
 }
 
-export type ArticleSummary = Pick<ArticleRecord, "id" | "title" | "slug" | "createdAt"> & {
+export type ArticleSummary = Pick<ArticleRecord, "id" | "title" | "slug" | "generatedBy" | "createdAt"> & {
     snippet: string
 }
 

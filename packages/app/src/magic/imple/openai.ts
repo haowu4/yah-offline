@@ -17,6 +17,25 @@ function safeJsonParse<T>(text: string, fallback: T): T {
   }
 }
 
+function extractJsonObjectText(input: string): string | null {
+  const text = input.trim()
+  if (!text) return null
+  if (text.startsWith("{") && text.endsWith("}")) return text
+
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  if (fencedMatch?.[1]) {
+    const candidate = fencedMatch[1].trim()
+    if (candidate.startsWith("{") && candidate.endsWith("}")) return candidate
+  }
+
+  const firstBrace = text.indexOf("{")
+  const lastBrace = text.lastIndexOf("}")
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return text.slice(firstBrace, lastBrace + 1).trim()
+  }
+  return null
+}
+
 function getChatOutputText(response: unknown): string {
   const anyResponse = response as { choices?: Array<{ message?: { content?: unknown } }> } | null
   const content = anyResponse?.choices?.[0]?.message?.content
@@ -28,6 +47,89 @@ function getChatOutputText(response: unknown): string {
     return textParts.join("\n")
   }
   throw new Error("Magic response did not contain chat completion content")
+}
+
+function getToolCallArgumentsText(response: unknown): string | null {
+  const anyResponse = response as {
+    choices?: Array<{
+      message?: {
+        tool_calls?: Array<{
+          function?: {
+            arguments?: unknown
+          }
+        }>
+      }
+    }>
+  } | null
+
+  const args = anyResponse?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments
+  if (typeof args === "string" && args.trim()) return args
+  if (args && typeof args === "object") {
+    try {
+      return JSON.stringify(args)
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+function safeStringify(value: unknown): string | null {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
+}
+
+function normalizeArticlePayload(
+  parsed: unknown,
+  fallbackIntent: string
+): { title: string; slug: string; content: string } {
+  const fallbackTitle = fallbackIntent.trim() || "Untitled"
+  const fallback = {
+    title: fallbackTitle,
+    slug: slugify(fallbackTitle),
+    content: "",
+  }
+
+  if (!parsed || typeof parsed !== "object") return fallback
+  const top = parsed as Record<string, unknown>
+
+  const resolveFromRecord = (record: Record<string, unknown>) => {
+    const title = typeof record.title === "string" ? record.title.trim() : ""
+    const slug = typeof record.slug === "string" ? record.slug.trim() : ""
+    const content = typeof record.content === "string" ? record.content.trim() : ""
+    return {
+      title: title || fallbackTitle,
+      slug: slugify(slug || title || fallbackTitle),
+      content,
+    }
+  }
+
+  const article = top.article
+  if (article && typeof article === "object") {
+    return resolveFromRecord(article as Record<string, unknown>)
+  }
+
+  if (typeof article === "string") {
+    const asText = article.trim()
+    if (!asText) return fallback
+    const nested = extractJsonObjectText(asText)
+    if (nested) {
+      const nestedParsed = safeJsonParse<Record<string, unknown>>(nested, {})
+      const normalized = resolveFromRecord(nestedParsed)
+      if (normalized.content) return normalized
+    }
+    return {
+      title: fallbackTitle,
+      slug: slugify(fallbackTitle),
+      content: asText,
+    }
+  }
+
+  const topLevel = resolveFromRecord(top)
+  return topLevel
 }
 
 function slugify(input: string): string {
@@ -82,6 +184,18 @@ function inferProviderFromBaseURL(baseURL: string): string {
   }
 }
 
+function parseToolChoiceMode(value: string | null | undefined): "force" | "auto" {
+  const mode = (value || "").trim().toLowerCase()
+  if (mode === "auto") return "auto"
+  return "force"
+}
+
+function isToolChoiceThinkingIncompatible(error: unknown): boolean {
+  const anyError = error as { message?: unknown; error?: { message?: unknown } } | null
+  const message = String(anyError?.message ?? anyError?.error?.message ?? "").toLowerCase()
+  return message.includes("tool_choice") && message.includes("thinking") && message.includes("incompatible")
+}
+
 export class OpenaiMagicApi extends AbstractMagicApi {
   private appCtx: AppCtx
   private client: OpenAI | null = null
@@ -110,13 +224,13 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     baseURL: string
   } {
     const configDB = this.appCtx.dbClients.config()
-    const envName = configDB.getValue("llm.apikey.env_name")?.trim() || "OPENAI_API_KEY"
+    const envName = configDB.getValue("llm.api_key.env_name")?.trim() || "OPENAI_API_KEY"
     const apiKey = process.env[envName]?.trim() || ""
     if (!apiKey) {
       throw new Error(`Missing API key for OpenAI magic provider. Set environment variable: ${envName}`)
     }
 
-    const baseURL = configDB.getValue("llm.baseurl")?.trim() || ""
+    const baseURL = configDB.getValue("llm.base_url")?.trim() || ""
     return { envName, apiKey, baseURL }
   }
 
@@ -160,13 +274,30 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     system: string
     user: string
   }): Promise<string> {
+    const result = await this.createTextWithTrace(args)
+    return result.text
+  }
+
+  private async createTextWithTrace(args: {
+    model: string
+    system: string
+    user: string
+  }): Promise<{
+    text: string
+    requestBody: {
+      model: string
+      stream: boolean
+      messages: Array<{ role: string; content: string }>
+    }
+    rawResponse: unknown
+  }> {
     const client = this.refreshClientIfNeeded()
     const requestBodyForLog = {
       model: args.model,
-      stream: false,
+      stream: false as const,
       messages: [
-        { role: "system", content: args.system },
-        { role: "user", content: args.user },
+        { role: "system" as const, content: args.system },
+        { role: "user" as const, content: args.user },
       ],
     }
 
@@ -179,7 +310,108 @@ export class OpenaiMagicApi extends AbstractMagicApi {
           { role: "user", content: args.user },
         ],
       })
-      return getChatOutputText(chatResponse)
+      return {
+        text: getChatOutputText(chatResponse),
+        requestBody: requestBodyForLog,
+        rawResponse: chatResponse,
+      }
+    } catch (error) {
+      const anyError = error as {
+        name?: string
+        message?: string
+        status?: number
+        code?: string
+        type?: string
+        request_id?: string
+        headers?: unknown
+        error?: unknown
+      }
+      const wrapped = new Error(anyError.message || "OpenAI request failed")
+      wrapped.name = anyError.name || "OpenAIError"
+      ;(wrapped as Error & { llmDetails?: unknown; status?: unknown; code?: unknown; type?: unknown }).llmDetails = {
+        requestBody: requestBodyForLog,
+        responseBody: anyError.error ?? null,
+        responseHeaders: anyError.headers ?? null,
+        requestId: anyError.request_id ?? null,
+      }
+      ;(wrapped as Error & { status?: unknown; code?: unknown; type?: unknown }).status = anyError.status
+      ;(wrapped as Error & { code?: unknown; type?: unknown }).code = anyError.code
+      ;(wrapped as Error & { type?: unknown }).type = anyError.type
+      throw wrapped
+    }
+  }
+
+  private async createToolJsonWithTrace<T>(args: {
+    model: string
+    system: string
+    user: string
+    toolName: string
+    toolDescription: string
+    parameters: Record<string, unknown>
+  }): Promise<{
+    parsed: T
+    requestBody: Record<string, unknown>
+    rawResponse: unknown
+    rawText: string
+  }> {
+    const client = this.refreshClientIfNeeded()
+    const toolChoiceMode = parseToolChoiceMode(this.appCtx.dbClients.config().getValue("llm.tool_choice.mode"))
+    const requestBodyForLog: Record<string, unknown> = {
+      model: args.model,
+      stream: false,
+      messages: [
+        { role: "system", content: args.system },
+        { role: "user", content: args.user },
+      ],
+      tools: [
+        {
+          type: "function" as const,
+          function: {
+            name: args.toolName,
+            description: args.toolDescription,
+            parameters: args.parameters,
+          },
+        },
+      ],
+    }
+    if (toolChoiceMode === "force") {
+      requestBodyForLog.tool_choice = {
+        type: "function" as const,
+        function: {
+          name: args.toolName,
+        },
+      }
+    }
+
+    try {
+      let chatResponse: unknown
+      try {
+        chatResponse = await client.chat.completions.create(requestBodyForLog as never)
+      } catch (error) {
+        if (!(toolChoiceMode === "force" && isToolChoiceThinkingIncompatible(error))) throw error
+        const retryBody = { ...requestBodyForLog }
+        delete retryBody.tool_choice
+        chatResponse = await client.chat.completions.create(retryBody as never)
+      }
+      const toolArguments = getToolCallArgumentsText(chatResponse)
+      if (toolArguments) {
+        return {
+          parsed: safeJsonParse<T>(toolArguments, {} as T),
+          requestBody: requestBodyForLog,
+          rawResponse: chatResponse,
+          rawText: "",
+        }
+      }
+
+      // Fallback for providers that ignore tool_choice and emit plain text JSON.
+      const rawText = getChatOutputText(chatResponse)
+      const extracted = extractJsonObjectText(rawText)
+      return {
+        parsed: safeJsonParse<T>(extracted || rawText, {} as T),
+        requestBody: requestBodyForLog,
+        rawResponse: chatResponse,
+        rawText,
+      }
     } catch (error) {
       const anyError = error as {
         name?: string
@@ -232,13 +464,23 @@ export class OpenaiMagicApi extends AbstractMagicApi {
       "Output: causes of world war i\n" +
       "Input: Including results for \"causes of world war i\". Search only for \"causes of world war i\"\n" +
       "Output: causes of world war i"
-    const text = sanitizeSpellingOutput(
-      await this.createText({
-        model,
-        system,
-        user: args.text,
-      })
-    )
+    const trace = await this.createToolJsonWithTrace<{ text?: string }>({
+      model,
+      system,
+      user: args.text,
+      toolName: "submit_spelling_correction",
+      toolDescription: "Return the corrected query text",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          text: { type: "string" },
+        },
+        required: ["text"],
+      },
+    })
+    const parsedText = typeof trace.parsed.text === "string" ? trace.parsed.text : ""
+    const text = sanitizeSpellingOutput(parsedText || trace.rawText)
     return { text: text || args.text }
   }
 
@@ -249,59 +491,208 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     const configDB = this.appCtx.dbClients.config()
     const model = requiredConfigValue(configDB, "search.intent_resolve.model")
 
-    const responseText = await this.createText({
+    const trace = await this.createToolJsonWithTrace<{ intents?: string[] }>({
       model,
       system:
-        "Extract user search intents. Return JSON only: {\"intents\": string[]}. " +
+        "Extract user search intents. " +
         "Output 2-5 concise intents, no duplicates, no numbering, no markdown.",
       user: [
         args.language ? `Language: ${args.language}` : "Language: auto-detect",
         `Query: ${args.query}`,
       ].join("\n"),
+      toolName: "submit_intents",
+      toolDescription: "Return the resolved search intents",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          intents: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+        required: ["intents"],
+      },
     })
-
-    const parsed = safeJsonParse<{ intents?: string[] }>(responseText, {})
-    const intents = normalizeIntents(parsed.intents ?? [])
+    const intents = normalizeIntents(trace.parsed.intents ?? [])
     return { intents: intents.length > 0 ? intents : [args.query.trim()] }
   }
 
   async createArticle(args: {
     query: string
     intent: string
-    language?: string
+  language?: string
   }): Promise<MagicSearchArticleResult> {
     const configDB = this.appCtx.dbClients.config()
     const model = requiredConfigValue(configDB, "search.content_generation.model")
+    const toolChoiceMode = parseToolChoiceMode(configDB.getValue("llm.tool_choice.mode"))
 
-    const responseText = await this.createText({
+    const client = this.refreshClientIfNeeded()
+    const requestBodyForLog: Record<string, unknown> = {
       model,
-      system:
-        "Write one useful markdown article for a search intent. Return JSON only: " +
-        "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
-        "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
-        "Do not use escaped or alternative latex delimiters.",
-      user: [
-        args.language ? `Language: ${args.language}` : "Language: auto-detect",
-        `Query: ${args.query}`,
-        `Intent: ${args.intent}`,
-      ].join("\n"),
-    })
+      stream: false,
+      messages: [
+        {
+          role: "system" as const,
+          content:
+            "Write one useful markdown article for a search intent. " +
+            "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
+            "Do not use escaped or alternative latex delimiters.",
+        },
+        {
+          role: "user" as const,
+          content: [
+            args.language ? `Language: ${args.language}` : "Language: auto-detect",
+            `Query: ${args.query}`,
+            `Intent: ${args.intent}`,
+          ].join("\n"),
+        },
+      ],
+      tools: [
+        {
+          type: "function" as const,
+          function: {
+            name: "submit_article",
+            description: "Return the generated article payload",
+            parameters: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                article: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    title: { type: "string" },
+                    slug: { type: "string" },
+                    content: { type: "string" },
+                  },
+                  required: ["title", "slug", "content"],
+                },
+              },
+              required: ["article"],
+            },
+          },
+        },
+      ],
+    }
+    if (toolChoiceMode === "force") {
+      requestBodyForLog.tool_choice = {
+        type: "function" as const,
+        function: {
+          name: "submit_article",
+        },
+      }
+    }
 
-    const parsed = safeJsonParse<{
+    let rawResponse: unknown
+    let rawResponseJson: string | null = null
+    let responseText = ""
+    let parsed: {
       article?: { title?: string; slug?: string; content?: string }
-    }>(responseText, {})
+    } = {}
+    let fallbackRawResponse: unknown = null
+    let fallbackRawResponseJson: string | null = null
+    let fallbackResponseText = ""
+    let fallbackParsed: {
+      article?: { title?: string; slug?: string; content?: string }
+    } = {}
+    try {
+      let chatResponse: unknown
+      try {
+        chatResponse = await client.chat.completions.create(requestBodyForLog as never)
+      } catch (error) {
+        if (!(toolChoiceMode === "force" && isToolChoiceThinkingIncompatible(error))) throw error
+        const retryBody = { ...requestBodyForLog }
+        delete retryBody.tool_choice
+        chatResponse = await client.chat.completions.create(retryBody as never)
+      }
+      rawResponse = chatResponse
+      rawResponseJson = safeStringify(chatResponse)
 
-    const title = parsed.article?.title?.trim() || args.intent.trim() || "Untitled"
-    const content = parsed.article?.content?.trim() || ""
+      const toolArguments = getToolCallArgumentsText(chatResponse)
+      if (toolArguments) {
+        parsed = safeJsonParse<{ article?: { title?: string; slug?: string; content?: string } }>(toolArguments, {})
+      } else {
+        // Fallback for providers that ignore tool_choice and emit plain text JSON.
+        responseText = getChatOutputText(chatResponse)
+        const extracted = extractJsonObjectText(responseText)
+        parsed = safeJsonParse<{ article?: { title?: string; slug?: string; content?: string } }>(extracted || responseText, {})
+      }
+    } catch (error) {
+      const anyError = error as {
+        name?: string
+        message?: string
+        status?: number
+        code?: string
+        type?: string
+        request_id?: string
+        headers?: unknown
+        error?: unknown
+      }
+      const wrapped = new Error(anyError.message || "OpenAI request failed")
+      wrapped.name = anyError.name || "OpenAIError"
+      ;(wrapped as Error & { llmDetails?: unknown; status?: unknown; code?: unknown; type?: unknown }).llmDetails = {
+        requestBody: requestBodyForLog,
+        responseBody: anyError.error ?? null,
+        responseHeaders: anyError.headers ?? null,
+        requestId: anyError.request_id ?? null,
+      }
+      ;(wrapped as Error & { status?: unknown; code?: unknown; type?: unknown }).status = anyError.status
+      ;(wrapped as Error & { code?: unknown; type?: unknown }).code = anyError.code
+      ;(wrapped as Error & { type?: unknown }).type = anyError.type
+      throw wrapped
+    }
+
+    let normalized = normalizeArticlePayload(parsed, args.intent)
+    if (!normalized.content) {
+      const fallback = await this.createTextWithTrace({
+        model,
+        system:
+          "Write one useful markdown article for a search intent. Return JSON only: " +
+          "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
+          "Do not wrap JSON in markdown code fences. " +
+          "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
+          "Do not use escaped or alternative latex delimiters.",
+        user: [
+          args.language ? `Language: ${args.language}` : "Language: auto-detect",
+          `Query: ${args.query}`,
+          `Intent: ${args.intent}`,
+        ].join("\n"),
+      })
+      fallbackRawResponse = fallback.rawResponse
+      fallbackRawResponseJson = safeStringify(fallback.rawResponse)
+      fallbackResponseText = fallback.text
+      const extracted = extractJsonObjectText(fallback.text)
+      fallbackParsed = safeJsonParse<{ article?: { title?: string; slug?: string; content?: string } }>(
+        extracted || fallback.text,
+        {}
+      )
+      normalized = normalizeArticlePayload(fallbackParsed, args.intent)
+    }
+    const title = normalized.title
+    const content = normalized.content
     if (!content) {
-      throw new Error("Empty article content")
+      const wrapped = new Error("Empty article content")
+      ;(wrapped as Error & { llmDetails?: unknown }).llmDetails = {
+        requestBody: requestBodyForLog,
+        responseBody: rawResponse,
+        responseBodyJson: rawResponseJson,
+        rawText: responseText,
+        parsedBody: parsed,
+        fallbackResponseBody: fallbackRawResponse,
+        fallbackResponseBodyJson: fallbackRawResponseJson,
+        fallbackRawText: fallbackResponseText,
+        fallbackParsedBody: fallbackParsed,
+      }
+      throw wrapped
     }
 
     return {
       article: {
         title,
-        slug: slugify(parsed.article?.slug?.trim() || title),
+        slug: normalized.slug,
         content,
+        generatedBy: `${(this.transportSnapshot?.baseURL || "default").trim() || "default"}:${model}`,
       },
     }
   }

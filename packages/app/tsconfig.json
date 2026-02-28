@@ -13,7 +13,9 @@
         "forceConsistentCasingInFileNames": true,
         "rootDir": "src",
         "outDir": "dist",
-        "noEmit": false
+        "noEmit": false,
+        "sourceMap": true,
+        "inlineSources": true
     },
     "exclude": ["tests"]
 }

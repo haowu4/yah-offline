@@ -261,6 +261,11 @@ export const DefaultConfigs: {
         description: "Per-request timeout in milliseconds for LLM generation calls.",
     },
     {
+        key: "search.generation_order.max_running_seconds",
+        value: "900",
+        description: "Max allowed running time (seconds) before a stuck generation order is auto-failed and unlocked.",
+    },
+    {
         key: "search.article_generation_eta.enabled",
         value: "1",
         description: "Enable estimated article-generation timing hints on search UI: 1|0.",

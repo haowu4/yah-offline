@@ -36,6 +36,37 @@ function extractJsonObjectText(input: string): string | null {
   return null
 }
 
+function extractJsonValueText(input: string): string | null {
+  const text = input.trim()
+  if (!text) return null
+  if ((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))) return text
+
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  if (fencedMatch?.[1]) {
+    const candidate = fencedMatch[1].trim()
+    if (
+      (candidate.startsWith("{") && candidate.endsWith("}")) ||
+      (candidate.startsWith("[") && candidate.endsWith("]"))
+    ) {
+      return candidate
+    }
+  }
+
+  const firstBrace = text.indexOf("{")
+  const lastBrace = text.lastIndexOf("}")
+  const objectCandidate = firstBrace >= 0 && lastBrace > firstBrace ? text.slice(firstBrace, lastBrace + 1).trim() : null
+
+  const firstBracket = text.indexOf("[")
+  const lastBracket = text.lastIndexOf("]")
+  const arrayCandidate =
+    firstBracket >= 0 && lastBracket > firstBracket ? text.slice(firstBracket, lastBracket + 1).trim() : null
+
+  if (objectCandidate && arrayCandidate) {
+    return objectCandidate.length <= arrayCandidate.length ? objectCandidate : arrayCandidate
+  }
+  return objectCandidate || arrayCandidate
+}
+
 function getChatOutputText(response: unknown): string {
   const anyResponse = response as { choices?: Array<{ message?: { content?: unknown } }> } | null
   const content = anyResponse?.choices?.[0]?.message?.content
@@ -194,6 +225,50 @@ function normalizePreviewItems(items: Array<{ intent?: string; title?: string; s
     }
   }
   return [...unique.values()].slice(0, 5)
+}
+
+function normalizePreviewPayload(payload: unknown): Array<{ intent: string; title: string; summary: string }> {
+  const asItems = (value: unknown): Array<{ intent: string; title: string; summary: string }> => {
+    if (!Array.isArray(value)) return []
+    return normalizePreviewItems(
+      value.map((entry) => {
+        if (!entry || typeof entry !== "object") return {}
+        const row = entry as Record<string, unknown>
+        const intent = typeof row.intent === "string" ? row.intent : typeof row.topic === "string" ? row.topic : ""
+        const title =
+          typeof row.title === "string"
+            ? row.title
+            : typeof row.headline === "string"
+              ? row.headline
+              : typeof row.article_title === "string"
+                ? row.article_title
+                : ""
+        const summary =
+          typeof row.summary === "string"
+            ? row.summary
+            : typeof row.description === "string"
+              ? row.description
+              : typeof row.snippet === "string"
+                ? row.snippet
+                : ""
+        return { intent, title, summary }
+      })
+    )
+  }
+
+  if (Array.isArray(payload)) return asItems(payload)
+  if (!payload || typeof payload !== "object") return []
+
+  const obj = payload as Record<string, unknown>
+  const keys = ["items", "previews", "results", "articles"]
+  for (const key of keys) {
+    const normalized = asItems(obj[key])
+    if (normalized.length > 0) return normalized
+  }
+
+  const singleton = asItems([obj])
+  if (singleton.length > 0) return singleton
+  return []
 }
 
 function requiredConfigValue(configDB: { getValue: (key: string) => string | null }, key: string): string {
@@ -580,7 +655,14 @@ export class OpenaiMagicApi extends AbstractMagicApi {
         required: ["items"],
       },
     })
-    const items = normalizePreviewItems(trace.parsed.items ?? [])
+    let items = normalizePreviewPayload(trace.parsed)
+    if (items.length === 0 && trace.rawText.trim()) {
+      const extracted = extractJsonValueText(trace.rawText)
+      if (extracted) {
+        const reparsed = safeJsonParse<unknown>(extracted, null)
+        items = normalizePreviewPayload(reparsed)
+      }
+    }
     if (items.length > 0) return { items }
     throw new Error("Invalid preview response: items are required")
   }

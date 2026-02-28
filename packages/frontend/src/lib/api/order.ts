@@ -43,6 +43,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 async function apiFetch<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
     },

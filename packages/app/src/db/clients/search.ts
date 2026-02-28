@@ -1257,6 +1257,57 @@ export class SearchDBClient {
         return tx()
     }
 
+    failExpiredRunningOrders(maxRunSeconds: number): number[] {
+        const thresholdSeconds = Number.isInteger(maxRunSeconds) && maxRunSeconds > 0 ? maxRunSeconds : 900
+        const tx = this.db.transaction(() => {
+            const rows = this.db
+                .prepare(
+                    `
+                    SELECT id
+                    FROM generation_order
+                    WHERE status = 'running'
+                      AND started_at IS NOT NULL
+                      AND started_at <= datetime('now', '-' || ? || ' seconds')
+                    ORDER BY id ASC
+                    `
+                )
+                .all(thresholdSeconds) as Array<{ id: number }>
+
+            if (rows.length === 0) return [] as number[]
+
+            const recovered: number[] = []
+            for (const row of rows) {
+                const updated = this.db
+                    .prepare(
+                        `
+                        UPDATE generation_order
+                        SET status = 'failed',
+                            error_message = 'Recovered from expired running order',
+                            finished_at = datetime('now'),
+                            updated_at = datetime('now')
+                        WHERE id = ? AND status = 'running'
+                        `
+                    )
+                    .run(row.id)
+                if (updated.changes > 0) {
+                    recovered.push(row.id)
+                    this.db
+                        .prepare(
+                            `
+                            DELETE FROM generation_lock
+                            WHERE owner_order_id = ?
+                            `
+                        )
+                        .run(row.id)
+                }
+            }
+
+            return recovered
+        })
+
+        return tx()
+    }
+
     completeGenerationOrder(orderId: number, summary?: unknown): void {
         this.db
             .prepare(

@@ -96,6 +96,18 @@ if ! tar -tzf "$TARBALL_PATH" | grep -q 'package/runtime/docs/getting-started.md
   echo "Missing runtime/docs/getting-started.md in tarball: $TARBALL_PATH" >&2
   exit 1
 fi
+if tar -tzf "$TARBALL_PATH" | grep -q '^package/src/'; then
+  echo "Tarball must not include TypeScript source directory (package/src): $TARBALL_PATH" >&2
+  exit 1
+fi
+if ! tar -tzf "$TARBALL_PATH" | grep -q '^package/dist/cli.js$'; then
+  echo "Missing compiled CLI entrypoint (package/dist/cli.js) in tarball: $TARBALL_PATH" >&2
+  exit 1
+fi
+if ! tar -tzf "$TARBALL_PATH" | grep -q '^package/bin/yah.js$'; then
+  echo "Missing CLI binary launcher (package/bin/yah.js) in tarball: $TARBALL_PATH" >&2
+  exit 1
+fi
 
 PUBLISH_CMD=(npm publish "$TARBALL_PATH" --access "$ACCESS")
 if [[ -n "$TAG" ]]; then

@@ -154,8 +154,15 @@ export class ApiError extends Error {
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const method = (init?.method || 'GET').toUpperCase()
+  const isGet = method === 'GET'
+  const noCachePath = isGet
+    ? `${path}${path.includes('?') ? '&' : '?'}_=${Date.now()}`
+    : path
+
+  const response = await fetch(`${API_BASE}${noCachePath}`, {
     ...init,
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),

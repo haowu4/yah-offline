@@ -38,6 +38,16 @@ export function createServer(appCtx: AppCtx) {
     const app = express()
     app.use(express.json())
     app.use(createRequestLogger({ debug: appCtx.config.app.debug }))
+
+    app.use("/api", (req, res, next) => {
+        delete req.headers["if-none-match"]
+        delete req.headers["if-modified-since"]
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+        res.setHeader("Pragma", "no-cache")
+        res.setHeader("Expires", "0")
+        next()
+    })
+
     const eventDispatcher = new EventDispatcher(appCtx)
     const magicApi = createMagicApi({ appCtx })
 

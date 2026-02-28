@@ -31,6 +31,43 @@ export function startLLMWorker(appCtx: AppCtx, eventDispatcher: EventDispatcher)
     return Math.min(parsePositiveIntOrDefault(raw, 3), 16)
   }
 
+  const getMaxOrderRunningSeconds = (): number => {
+    const configDB = appCtx.dbClients.config()
+    const raw = configDB.getValue("search.generation_order.max_running_seconds")
+    return Math.min(parsePositiveIntOrDefault(raw, 900), 24 * 60 * 60)
+  }
+
+  const recoverExpiredRunningOrders = () => {
+    const maxRunningSeconds = getMaxOrderRunningSeconds()
+    const recoveredOrderIds = searchDB.failExpiredRunningOrders(maxRunningSeconds)
+    for (const orderId of recoveredOrderIds) {
+      searchDB.appendGenerationLog({
+        orderId,
+        stage: "order",
+        level: "error",
+        message: `Order auto-failed after exceeding running TTL (${maxRunningSeconds}s)`,
+      })
+
+      try {
+        const order = searchDB.getGenerationOrderById(orderId)
+        eventDispatcher.emit({
+          orderId,
+          event: {
+            type: "order.failed",
+            orderId,
+            queryId: order.queryId,
+            message: order.errorMessage || "Recovered from expired running order",
+          },
+        })
+      } catch {
+        // Ignore missing-order edge case while recovering stale rows.
+      }
+    }
+    if (recoveredOrderIds.length > 0) {
+      logLine("info", `Recovered ${recoveredOrderIds.length} expired running generation order(s)`)
+    }
+  }
+
   const processOrder = async (orderId: number) => {
     try {
       const order = searchDB.getGenerationOrderById(orderId)
@@ -57,6 +94,7 @@ export function startLLMWorker(appCtx: AppCtx, eventDispatcher: EventDispatcher)
   const pump = async () => {
     if (stopped) return
     try {
+      recoverExpiredRunningOrders()
       const maxConcurrency = getMaxConcurrency()
       while (!stopped && inFlight.size < maxConcurrency) {
         const order = searchDB.claimNextQueuedOrder()

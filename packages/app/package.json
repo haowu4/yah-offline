@@ -1,15 +1,16 @@
 {
   "name": "@ootc/yah",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "type": "module",
+  "bin": {
+    "yah": "bin/yah.js"
+  },
   "files": [
     "README.md",
-    "src",
-    "scripts",
+    "bin",
+    "dist",
     "data",
-    "runtime",
-    "tests",
-    "tsconfig.json"
+    "runtime"
   ],
   "scripts": {
     "dev": "tsx watch src/cli.ts start",
@@ -27,8 +28,9 @@
     "better-sqlite3": "^12.6.2",
     "dotenv": "^17.2.3",
     "express": "^4.21.1",
+    "knex": "^3.1.0",
     "multer": "^2.0.2",
-    "knex": "^3.1.0"
+    "openai": "^6.21.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

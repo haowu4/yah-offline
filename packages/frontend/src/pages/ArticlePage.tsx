@@ -278,14 +278,28 @@ export function ArticlePage() {
                 disabled={isRegenerating}
               >
                 <FiRefreshCw className={isRegenerating ? styles.regenerateIconSpinning : styles.regenerateIcon} aria-hidden />
-                <span>{isRegenerating ? t('article.action.regenerating') : t('article.action.regenerate')}</span>
+                <span>{t('article.action.regenerate')}</span>
               </button>
               {regenTimingLabel ? <p className={styles.regenerateMeta}>{regenTimingLabel}</p> : null}
             </div>
           ) : null}
         </div>
         {!article.content ? (
-          <div className={styles.loading}>{isRegenerating ? t('article.action.regenerating') : t('article.loading')}</div>
+          <div>
+            <p className={styles.contentLoadingNotice}>
+              {t('article.status.generatingContent')}
+              {regenTimingLabel ? ` ${regenTimingLabel}` : ''}
+            </p>
+            <div className={styles.contentSkeleton} aria-hidden>
+              <div className={styles.contentSkeletonLineLg} />
+              <div className={styles.contentSkeletonLineMd} />
+              <div className={styles.contentSkeletonLineSm} />
+              <div className={styles.contentSkeletonBlock} />
+              <div className={styles.contentSkeletonLineMd} />
+              <div className={styles.contentSkeletonLineSm} />
+              <div className={styles.contentSkeletonBlock} />
+            </div>
+          </div>
         ) : isMarkdown ? (
           <MarkdownPreview content={article.content} />
         ) : (

@@ -135,3 +135,63 @@
 .sidebarList {
   padding-left: 18px;
 }
+
+.contentSkeleton {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.contentLoadingNotice {
+  margin: 0;
+  font-size: 12px;
+  color: #6d7683;
+}
+
+.contentSkeletonLineLg,
+.contentSkeletonLineMd,
+.contentSkeletonLineSm,
+.contentSkeletonBlock {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #edf1f7;
+}
+
+.contentSkeletonLineLg::after,
+.contentSkeletonLineMd::after,
+.contentSkeletonLineSm::after,
+.contentSkeletonBlock::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.55) 50%, rgba(255, 255, 255, 0) 100%);
+  animation: article-skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
+.contentSkeletonLineLg {
+  height: 18px;
+  width: 82%;
+}
+
+.contentSkeletonLineMd {
+  height: 14px;
+  width: 74%;
+}
+
+.contentSkeletonLineSm {
+  height: 14px;
+  width: 58%;
+}
+
+.contentSkeletonBlock {
+  height: 120px;
+  width: 100%;
+}
+
+@keyframes article-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

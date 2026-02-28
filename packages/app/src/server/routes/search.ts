@@ -517,6 +517,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     const kind = parseOrderKind(req.query.kind)
     const queryId = typeof req.query.queryId === "string" ? parseQueryId(req.query.queryId) : null
     const intentId = typeof req.query.intentId === "string" ? parseQueryId(req.query.intentId) : null
+    const articleId = typeof req.query.articleId === "string" ? parseQueryId(req.query.articleId) : null
 
     if (!kind || !queryId) {
       res.status(400).json({ error: "kind and queryId are required" })
@@ -525,7 +526,9 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
 
     const scope = kind === "query_full"
       ? searchDB.listActiveOrdersForScope({ scopeType: "query", queryId })
-      : searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId, intentId: intentId ?? undefined })
+      : kind === "article_content_generate" && articleId
+        ? searchDB.listActiveOrdersForScope({ scopeType: "article", queryId, articleId })
+        : searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId, intentId: intentId ?? undefined })
 
     if (scope.length > 0) {
       const activeOrder = scope[0]
@@ -551,6 +554,9 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     const intentId = req.body?.intentId === undefined || req.body?.intentId === null
       ? null
       : parseQueryId(String(req.body.intentId))
+    const articleId = req.body?.articleId === undefined || req.body?.articleId === null
+      ? null
+      : parseQueryId(String(req.body.articleId))
 
     if (!kind || !queryId) {
       res.status(400).json({ error: "kind and queryId are required" })
@@ -563,7 +569,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       return
     }
 
-    if (kind !== "query_full") {
+    if (kind !== "query_full" && kind !== "article_content_generate") {
       if (!intentId) {
         res.status(400).json({ error: "intentId is required" })
         return
@@ -574,10 +580,32 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
         return
       }
     }
+    if (kind === "article_content_generate") {
+      if (!intentId && !articleId) {
+        res.status(400).json({ error: "intentId or articleId is required" })
+        return
+      }
+      if (articleId) {
+        const article = searchDB.getArticleById(articleId)
+        if (!article) {
+          res.status(404).json({ error: "article not found" })
+          return
+        }
+      }
+      if (intentId) {
+        const intentExists = searchDB.listIntentsByQueryId(queryId).some((intent) => intent.id === intentId)
+        if (!intentExists) {
+          res.status(404).json({ error: "intent not found for query" })
+          return
+        }
+      }
+    }
 
     const activeOrders = kind === "query_full"
       ? searchDB.listActiveOrdersForScope({ scopeType: "query", queryId })
-      : searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId, intentId: intentId ?? undefined })
+      : kind === "article_content_generate" && articleId
+        ? searchDB.listActiveOrdersForScope({ scopeType: "article", queryId, articleId })
+        : searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId, intentId: intentId ?? undefined })
 
     if (kind !== "query_full") {
       const activeQueryOrders = searchDB
@@ -610,6 +638,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       queryId,
       kind,
       intentId,
+      articleId,
       requestedBy: "user",
       requestPayload: {
         keepTitle: kind === "article_regen_keep_title",
@@ -953,23 +982,36 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     const intent = payload.intent
     const shouldGenerateContent = article.status !== "content_ready" || !article.content
 
-    if (shouldGenerateContent && query && intent) {
-      const activeOrders = searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId: query.id, intentId: intent.id })
+    if (shouldGenerateContent) {
+      const fallbackQuery = query || searchDB.upsertQuery({
+        value: article.title,
+        language: "en",
+        originalValue: article.title,
+      })
+      const scopeType = intent ? "intent" as const : "article" as const
+      const scopeOrders = scopeType === "intent"
+        ? searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId: fallbackQuery.id, intentId: intent?.id ?? undefined })
+        : searchDB.listActiveOrdersForScope({ scopeType: "article", queryId: fallbackQuery.id, articleId: article.id })
+      const activeOrders = scopeOrders
         .filter((order) => order.kind === "article_content_generate" || order.kind === "article_regen_keep_title")
       if (activeOrders.length > 0) {
         activeOrderId = activeOrders[0].id
       } else {
         const created = searchDB.createGenerationOrder({
-          queryId: query.id,
-          intentId: intent.id,
+          queryId: fallbackQuery.id,
+          intentId: intent?.id ?? null,
+          articleId: intent ? null : article.id,
           kind: "article_content_generate",
           requestedBy: "system",
-          requestPayload: { trigger: "article-open" },
+          requestPayload: { trigger: "article-open", articleId: article.id },
         })
-        const contenders = searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId: query.id, intentId: intent.id })
+        const contenders = scopeType === "intent"
+          ? searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId: fallbackQuery.id, intentId: intent?.id ?? undefined })
+          : searchDB.listActiveOrdersForScope({ scopeType: "article", queryId: fallbackQuery.id, articleId: article.id })
+        const filtered = contenders
           .filter((order) => order.kind === "article_content_generate" || order.kind === "article_regen_keep_title")
           .sort((a, b) => a.id - b.id)
-        const winner = contenders[0]
+        const winner = filtered[0]
         if (winner && winner.id !== created.id) {
           searchDB.cancelOrder(created.id)
           activeOrderId = winner.id

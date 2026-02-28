@@ -16,6 +16,7 @@ export type GenerationOrderRecord = {
   queryId: number
   kind: GenerationOrderKind
   intentId: number | null
+  articleId: number | null
   status: GenerationOrderStatus
   requestedBy: "user" | "system"
   requestPayloadJson: string

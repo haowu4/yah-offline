@@ -169,7 +169,8 @@ const EN: Record<string, string> = {
   'article.related.query': 'Related query',
   'article.related.intents': 'Other intents',
   'article.related.topics': 'Related topics',
-  'article.related.none': 'No related intents.',
+  'article.related.articles': 'Recommended articles',
+  'article.related.none': 'No recommended articles yet.',
 }
 
 export const messages: Record<Locale, Record<string, string>> = {

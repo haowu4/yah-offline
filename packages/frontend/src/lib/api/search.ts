@@ -69,11 +69,14 @@ export type ApiArticleDetail = {
     filetype: string
   }
   query?: ApiQueryRecord
-  relatedIntents: Array<{
+  recommendedArticles: Array<{
     id: number
-    intent: string
+    title: string
+    slug: string
     filetype: string
-    articleSlug: string | null
+    summary: string
+    status: 'preview_ready' | 'content_generating' | 'content_ready' | 'content_failed'
+    createdAt: string
   }>
   activeOrderId?: number | null
 }
@@ -234,6 +237,7 @@ export async function createOrder(args: {
   kind: GenerationOrderKind
   queryId: number
   intentId?: number
+  articleId?: number
 }): Promise<CreateOrderResponse> {
   return apiFetch<CreateOrderResponse>('/orders', {
     method: 'POST',
@@ -241,6 +245,7 @@ export async function createOrder(args: {
       kind: args.kind,
       queryId: args.queryId,
       intentId: args.intentId,
+      articleId: args.articleId,
     }),
   })
 }

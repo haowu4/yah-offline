@@ -60,6 +60,7 @@ async function main() {
         "query_intent",
         "query_query_intent",
         "article",
+        "article_recommendation",
         "query_intent_article",
         "llm_job",
         "llm_event",

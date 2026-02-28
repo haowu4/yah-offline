@@ -48,7 +48,7 @@ export type ArticleDetailPayload = {
     article: ArticleRecord
     intent?: QueryIntentRecord
     query?: QueryRecord
-    relatedIntents: Array<Pick<QueryIntentRecord, "id" | "intent" | "filetype"> & { articleSlug: string | null }>
+    recommendedArticles: Array<Pick<ArticleRecord, "id" | "title" | "slug" | "filetype" | "summary" | "status" | "createdAt">>
 }
 
 export type SearchStreamIntentCreatedEvent = {

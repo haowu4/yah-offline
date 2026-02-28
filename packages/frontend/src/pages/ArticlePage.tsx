@@ -4,7 +4,7 @@ import { FiRefreshCw } from 'react-icons/fi'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { useI18n } from '../i18n/useI18n'
 import type { ApiArticleDetail } from '../lib/api/search'
-import { createOrder, getArticleBySlug, getGenerationEtaByAction, isResourceLockedError, streamOrder } from '../lib/api/search'
+import { createOrder, createQuery, getArticleBySlug, getGenerationEtaByAction, isResourceLockedError, streamOrder } from '../lib/api/search'
 import styles from './ArticlePage.module.css'
 import '@ootc/markdown/style.css';
 
@@ -165,14 +165,14 @@ export function ArticlePage() {
     )
   }
 
-  const { article, query, relatedIntents } = state.payload
+  const { article, query, recommendedArticles } = state.payload
   const filetype = (article.filetype || 'md').toLowerCase()
   const isMarkdown = filetype === 'md' || filetype === 'markdown'
   const codeLanguage = filetype === 'bash' || filetype === 'zsh' ? 'sh' : filetype
   const backToResultsHref = query
     ? `/search?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`
     : '/search'
-  const canRegenerate = Boolean(query && state.payload.intent)
+  const canRegenerate = true
   const createdAtLabel = (() => {
     const parsed = new Date(article.createdAt)
     if (Number.isNaN(parsed.getTime())) return article.createdAt
@@ -202,17 +202,27 @@ export function ArticlePage() {
     : null
 
   const regenerateArticle = async () => {
-    if (!query || !state.payload?.intent || isRegenerating) return
+    if (isRegenerating) return
     setIsRegenerating(true)
-    const currentIntentId = state.payload.intent.id
+    const currentIntentId = state.payload?.intent?.id
+    let currentQueryId = query?.id ?? null
 
     try {
+      if (!currentQueryId) {
+        const createdQuery = await createQuery({
+          query: article.title,
+          language: languageText || 'en',
+          spellCorrectionMode: 'off',
+        })
+        currentQueryId = createdQuery.queryId
+      }
       let orderId: number
       try {
         const created = await createOrder({
           kind: 'article_content_generate',
-          queryId: query.id,
+          queryId: currentQueryId,
           intentId: currentIntentId,
+          articleId: currentIntentId ? undefined : article.id,
         })
         orderId = created.orderId
       } catch (error) {
@@ -317,27 +327,30 @@ export function ArticlePage() {
           </>
         ) : null}
 
-        {query ? (
-          <>
-            <h3>{t('article.related.topics')}</h3>
-            {relatedIntents.length === 0 ? <p>{t('article.related.none')}</p> : null}
-            <ul className={styles.sidebarList}>
-              {relatedIntents.map((intent) => (
-                <li key={intent.id}>
-                  {intent.articleSlug ? (
-                    <Link
-                      to={`/content/${encodeURIComponent(intent.articleSlug)}?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`}
-                    >
-                      {intent.intent}
-                    </Link>
-                  ) : (
-                    <span>{intent.intent}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
+        <>
+          <h3>{t('article.related.articles')}</h3>
+          {recommendedArticles.length === 0 && !isRegenerating ? <p>{t('article.related.none')}</p> : null}
+          {recommendedArticles.length === 0 && isRegenerating ? (
+            <div className={styles.sidebarSkeleton} aria-hidden>
+              <div className={styles.sidebarSkeletonLine} />
+              <div className={styles.sidebarSkeletonLineShort} />
+              <div className={styles.sidebarSkeletonLine} />
+              <div className={styles.sidebarSkeletonLineShort} />
+            </div>
+          ) : null}
+          <ul className={styles.sidebarList}>
+            {recommendedArticles.map((recommended) => (
+              <li key={recommended.id}>
+                <Link
+                  to={`/content/${encodeURIComponent(recommended.slug)}${query ? `?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}` : ''}`}
+                >
+                  {recommended.title}
+                </Link>
+                <p className={styles.generatedBy}>{recommended.summary}</p>
+              </li>
+            ))}
+          </ul>
+        </>
       </aside>
     </div>
   )

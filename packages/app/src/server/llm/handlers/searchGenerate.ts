@@ -298,21 +298,49 @@ export function createSearchGenerateHandler(args: {
           })
         }
       } else {
-        if (!order.intentId) {
-          throw new Error("intent_id is required for content generation")
+        let targetIntentId: number | null = null
+        let targetIntentText = ""
+        let targetFiletype = queryFiletype
+        let currentArticle: ReturnType<typeof searchDB.getArticleById> | null = null
+        if (order.intentId) {
+          const found = searchDB.listIntentsByQueryId(order.queryId).find((item) => item.id === order.intentId)
+          if (!found) {
+            throw new Error("Target intent not found for query")
+          }
+          const intentLock = searchDB.tryAcquireLock({
+            orderId: order.id,
+            scopeType: "intent",
+            scopeKey: `intent:${order.queryId}:${found.id}`,
+            leaseSeconds: 60,
+          })
+          if (!intentLock.ok) {
+            throw new Error(`Intent locked by order ${intentLock.ownerOrderId}`)
+          }
+          currentArticle = searchDB.getPrimaryArticleByIntentId(found.id)
+          if (!currentArticle) {
+            throw new Error("Preview article not found for intent")
+          }
+          targetIntentId = found.id
+          targetIntentText = found.intent
+          targetFiletype = found.filetype
+        } else if (order.articleId) {
+          const articleLock = searchDB.tryAcquireLock({
+            orderId: order.id,
+            scopeType: "article",
+            scopeKey: `article:${order.articleId}`,
+            leaseSeconds: 60,
+          })
+          if (!articleLock.ok) {
+            throw new Error(`Article locked by order ${articleLock.ownerOrderId}`)
+          }
+          currentArticle = searchDB.getArticleById(order.articleId)
+          targetIntentText = currentArticle.title
+          targetFiletype = currentArticle.filetype
+        } else {
+          throw new Error("intent_id or article_id is required for content generation")
         }
-        const found = searchDB.listIntentsByQueryId(order.queryId).find((item) => item.id === order.intentId)
-        if (!found) {
-          throw new Error("Target intent not found for query")
-        }
-        const intentLock = searchDB.tryAcquireLock({
-          orderId: order.id,
-          scopeType: "intent",
-          scopeKey: `intent:${order.queryId}:${found.id}`,
-          leaseSeconds: 60,
-        })
-        if (!intentLock.ok) {
-          throw new Error(`Intent locked by order ${intentLock.ownerOrderId}`)
+        if (!currentArticle) {
+          throw new Error("Target article not found for content generation")
         }
 
         args.eventDispatcher.emit({
@@ -322,14 +350,9 @@ export function createSearchGenerateHandler(args: {
             orderId: order.id,
             queryId: order.queryId,
             stage: "article",
-            message: `Generating article content for intent ${found.id}`,
+            message: `Generating article content for article ${currentArticle.id}`,
           },
         })
-
-        const currentArticle = searchDB.getPrimaryArticleByIntentId(found.id)
-        if (!currentArticle) {
-          throw new Error("Preview article not found for intent")
-        }
 
         searchDB.setArticleContentStatus({
           articleId: currentArticle.id,
@@ -339,7 +362,7 @@ export function createSearchGenerateHandler(args: {
 
         const runId = searchDB.createArticleGenerationRun({
           queryId: order.queryId,
-          intentId: found.id,
+          intentId: targetIntentId,
           articleId: currentArticle.id,
           kind: "content",
           orderId: order.id,
@@ -351,16 +374,16 @@ export function createSearchGenerateHandler(args: {
           const articleResult = await callWithRetry({
             trigger: "article-generation",
             query: cleanQuery,
-            intent: found.intent,
+            intent: targetIntentText,
             queryId: order.queryId,
-            intentId: found.id,
+            intentId: targetIntentId ?? undefined,
             orderId: order.id,
             run: () =>
               args.magicApi.createArticle({
                 query: cleanQuery,
-                intent: found.intent,
+                intent: targetIntentText,
                 language: query.language,
-                filetype: found.filetype,
+                filetype: targetFiletype,
               }),
           })
           llmAttempt = articleResult.attempt
@@ -372,6 +395,23 @@ export function createSearchGenerateHandler(args: {
             contentErrorMessage: null,
             generatedBy: articleResult.result.article.generatedBy,
           })
+          for (let index = 0; index < articleResult.result.recommendations.length; index += 1) {
+            const recommendation = articleResult.result.recommendations[index]
+            const recommendedArticle = searchDB.createArticle({
+              title: recommendation.title,
+              summary: recommendation.summary,
+              filetype: targetFiletype,
+              content: null,
+              status: "preview_ready",
+              contentErrorMessage: null,
+              generatedBy: `${args.magicApi.providerName({})}:recommendation`,
+            })
+            searchDB.createArticleRecommendation({
+              sourceArticleId: currentArticle.id,
+              recommendedArticleId: recommendedArticle.id,
+              position: index + 1,
+            })
+          }
           searchDB.completeArticleGenerationRun({
             runId,
             articleId: currentArticle.id,

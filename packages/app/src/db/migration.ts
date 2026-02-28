@@ -69,6 +69,21 @@ export const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_query_intent_article_intent_id ON query_intent_article(intent_id);
         CREATE INDEX IF NOT EXISTS idx_query_intent_article_article_id ON query_intent_article(article_id);
 
+        CREATE TABLE IF NOT EXISTS article_recommendation (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_article_id INTEGER NOT NULL,
+            recommended_article_id INTEGER NOT NULL,
+            position INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (source_article_id) REFERENCES article(id) ON DELETE CASCADE,
+            FOREIGN KEY (recommended_article_id) REFERENCES article(id) ON DELETE CASCADE,
+            UNIQUE (source_article_id, recommended_article_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_article_recommendation_source
+          ON article_recommendation(source_article_id, created_at DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_article_recommendation_recommended
+          ON article_recommendation(recommended_article_id, created_at DESC, id DESC);
+
         CREATE TABLE IF NOT EXISTS search_spell_cache (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_text TEXT NOT NULL,
@@ -128,6 +143,7 @@ export const migrations: Migration[] = [
             query_id INTEGER NOT NULL,
             kind TEXT NOT NULL CHECK (kind IN ('query_full', 'intent_regen', 'article_regen_keep_title', 'article_content_generate')),
             intent_id INTEGER,
+            article_id INTEGER,
             status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
             requested_by TEXT NOT NULL DEFAULT 'user' CHECK (requested_by IN ('user', 'system')),
             request_payload_json TEXT NOT NULL DEFAULT '{}',
@@ -138,11 +154,13 @@ export const migrations: Migration[] = [
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (query_id) REFERENCES query(id) ON DELETE CASCADE,
-            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE SET NULL
+            FOREIGN KEY (intent_id) REFERENCES query_intent(id) ON DELETE SET NULL,
+            FOREIGN KEY (article_id) REFERENCES article(id) ON DELETE SET NULL
         );
         CREATE INDEX IF NOT EXISTS idx_generation_order_status_created ON generation_order(status, created_at, id);
         CREATE INDEX IF NOT EXISTS idx_generation_order_query_status ON generation_order(query_id, status, id);
         CREATE INDEX IF NOT EXISTS idx_generation_order_intent_status ON generation_order(intent_id, status, id);
+        CREATE INDEX IF NOT EXISTS idx_generation_order_article_status ON generation_order(article_id, status, id);
 
         CREATE TABLE IF NOT EXISTS generation_event (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -196,7 +214,7 @@ export const migrations: Migration[] = [
 
         CREATE TABLE IF NOT EXISTS generation_lock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scope_type TEXT NOT NULL CHECK (scope_type IN ('query', 'intent')),
+            scope_type TEXT NOT NULL CHECK (scope_type IN ('query', 'intent', 'article')),
             scope_key TEXT NOT NULL,
             owner_order_id INTEGER NOT NULL,
             lease_expires_at TEXT NOT NULL,

@@ -15,6 +15,10 @@ export type MagicSearchArticleResult = {
     content: string
     generatedBy: string
   }
+  recommendations: Array<{
+    title: string
+    summary: string
+  }>
 }
 
 export type MagicImageResult = {

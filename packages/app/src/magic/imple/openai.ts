@@ -85,25 +85,48 @@ function safeStringify(value: unknown): string | null {
 function normalizeArticlePayload(
   parsed: unknown,
   fallbackIntent: string
-): { title: string; slug: string; content: string } {
+): {
+  title: string
+  slug: string
+  content: string
+  recommendations: Array<{ title: string; summary: string }>
+} {
   const fallbackTitle = fallbackIntent.trim() || "Untitled"
   const fallback = {
     title: fallbackTitle,
     slug: slugify(fallbackTitle),
     content: "",
+    recommendations: [] as Array<{ title: string; summary: string }>,
   }
 
   if (!parsed || typeof parsed !== "object") return fallback
   const top = parsed as Record<string, unknown>
 
+  const normalizeRecommendations = (value: unknown): Array<{ title: string; summary: string }> => {
+    if (!Array.isArray(value)) return []
+    const items: Array<{ title: string; summary: string }> = []
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object") continue
+      const row = entry as Record<string, unknown>
+      const title = typeof row.title === "string" ? row.title.trim() : ""
+      const summary = typeof row.summary === "string" ? row.summary.trim() : ""
+      if (!title || !summary) continue
+      items.push({ title, summary })
+      if (items.length >= 3) break
+    }
+    return items
+  }
+
   const resolveFromRecord = (record: Record<string, unknown>) => {
     const title = typeof record.title === "string" ? record.title.trim() : ""
     const slug = typeof record.slug === "string" ? record.slug.trim() : ""
     const content = typeof record.content === "string" ? record.content.trim() : ""
+    const recommendations = normalizeRecommendations(record.recommendations)
     return {
       title: title || fallbackTitle,
       slug: slugify(slug || title || fallbackTitle),
       content,
+      recommendations,
     }
   }
 
@@ -125,6 +148,7 @@ function normalizeArticlePayload(
       title: fallbackTitle,
       slug: slugify(fallbackTitle),
       content: asText,
+      recommendations: [],
     }
   }
 
@@ -574,18 +598,20 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     const isMarkdownOutput = filetype === "md"
     const systemPrompt = isMarkdownOutput
       ? "Write one useful markdown article for a search intent. " +
+        "Also generate 1-3 recommended follow-up reading items (preview only, no content bodies). " +
         "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
         "Do not use escaped or alternative latex delimiters."
       : `Write one useful ${filetype} file for a search intent. ` +
-        "Return file content only in the content field, with no markdown fences and no prose outside the generated file text."
+        "Return file content only in the content field, with no markdown fences and no prose outside the generated file text. " +
+        "Also generate 1-3 recommended follow-up reading items (preview only, no content bodies)."
     const fallbackSystemPrompt = isMarkdownOutput
       ? "Write one useful markdown article for a search intent. Return JSON only: " +
-        "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
+        "{\"article\": {\"title\": string, \"slug\": string, \"content\": string, \"recommendations\": [{\"title\": string, \"summary\": string}]}}. " +
         "Do not wrap JSON in markdown code fences. " +
         "For math notation in markdown, use only: inline `$equation$` and display `$$equation$$`. " +
         "Do not use escaped or alternative latex delimiters."
       : `Write one useful ${filetype} file for a search intent. Return JSON only: ` +
-        "{\"article\": {\"title\": string, \"slug\": string, \"content\": string}}. " +
+        "{\"article\": {\"title\": string, \"slug\": string, \"content\": string, \"recommendations\": [{\"title\": string, \"summary\": string}]}}. " +
         "Do not wrap JSON in markdown code fences. " +
         "The content must be raw file text with no markdown fences."
 
@@ -625,8 +651,22 @@ export class OpenaiMagicApi extends AbstractMagicApi {
                     title: { type: "string" },
                     slug: { type: "string" },
                     content: { type: "string" },
+                    recommendations: {
+                      type: "array",
+                      minItems: 1,
+                      maxItems: 3,
+                      items: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                          title: { type: "string" },
+                          summary: { type: "string" },
+                        },
+                        required: ["title", "summary"],
+                      },
+                    },
                   },
-                  required: ["title", "slug", "content"],
+                  required: ["title", "slug", "content", "recommendations"],
                 },
               },
               required: ["article"],
@@ -648,13 +688,23 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     let rawResponseJson: string | null = null
     let responseText = ""
     let parsed: {
-      article?: { title?: string; slug?: string; content?: string }
+      article?: {
+        title?: string
+        slug?: string
+        content?: string
+        recommendations?: Array<{ title?: string; summary?: string }>
+      }
     } = {}
     let fallbackRawResponse: unknown = null
     let fallbackRawResponseJson: string | null = null
     let fallbackResponseText = ""
     let fallbackParsed: {
-      article?: { title?: string; slug?: string; content?: string }
+      article?: {
+        title?: string
+        slug?: string
+        content?: string
+        recommendations?: Array<{ title?: string; summary?: string }>
+      }
     } = {}
     try {
       let chatResponse: unknown
@@ -671,12 +721,26 @@ export class OpenaiMagicApi extends AbstractMagicApi {
 
       const toolArguments = getToolCallArgumentsText(chatResponse)
       if (toolArguments) {
-        parsed = safeJsonParse<{ article?: { title?: string; slug?: string; content?: string } }>(toolArguments, {})
+        parsed = safeJsonParse<{
+          article?: {
+            title?: string
+            slug?: string
+            content?: string
+            recommendations?: Array<{ title?: string; summary?: string }>
+          }
+        }>(toolArguments, {})
       } else {
         // Fallback for providers that ignore tool_choice and emit plain text JSON.
         responseText = getChatOutputText(chatResponse)
         const extracted = extractJsonObjectText(responseText)
-        parsed = safeJsonParse<{ article?: { title?: string; slug?: string; content?: string } }>(extracted || responseText, {})
+        parsed = safeJsonParse<{
+          article?: {
+            title?: string
+            slug?: string
+            content?: string
+            recommendations?: Array<{ title?: string; summary?: string }>
+          }
+        }>(extracted || responseText, {})
       }
     } catch (error) {
       const anyError = error as {
@@ -719,7 +783,14 @@ export class OpenaiMagicApi extends AbstractMagicApi {
       fallbackRawResponseJson = safeStringify(fallback.rawResponse)
       fallbackResponseText = fallback.text
       const extracted = extractJsonObjectText(fallback.text)
-      fallbackParsed = safeJsonParse<{ article?: { title?: string; slug?: string; content?: string } }>(
+      fallbackParsed = safeJsonParse<{
+        article?: {
+          title?: string
+          slug?: string
+          content?: string
+          recommendations?: Array<{ title?: string; summary?: string }>
+        }
+      }>(
         extracted || fallback.text,
         {}
       )
@@ -742,6 +813,21 @@ export class OpenaiMagicApi extends AbstractMagicApi {
       }
       throw wrapped
     }
+    if (normalized.recommendations.length === 0) {
+      const wrapped = new Error("Empty recommendations")
+      ;(wrapped as Error & { llmDetails?: unknown }).llmDetails = {
+        requestBody: requestBodyForLog,
+        responseBody: rawResponse,
+        responseBodyJson: rawResponseJson,
+        rawText: responseText,
+        parsedBody: parsed,
+        fallbackResponseBody: fallbackRawResponse,
+        fallbackResponseBodyJson: fallbackRawResponseJson,
+        fallbackRawText: fallbackResponseText,
+        fallbackParsedBody: fallbackParsed,
+      }
+      throw wrapped
+    }
 
     return {
       article: {
@@ -750,6 +836,7 @@ export class OpenaiMagicApi extends AbstractMagicApi {
         content,
         generatedBy: `${(this.transportSnapshot?.baseURL || "default").trim() || "default"}:${model}`,
       },
+      recommendations: normalized.recommendations,
     }
   }
 

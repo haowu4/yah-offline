@@ -32,11 +32,20 @@ type Article = {
     status: 'preview_ready' | 'content_generating' | 'content_ready' | 'content_failed'
     createdAt: Dates
 }
+
+type ArticleRecommendation = {
+    id: int
+    source_article_id: int
+    recommended_article_id: int
+    position?: int
+    createdAt: Dates
+}
 ```
 #### Relationships
 
 One Query  has many QueryIntent
 One QueryIntent has many Article
+One Article has many recommended Articles (via ArticleRecommendation)
 
 
 ### Email Service

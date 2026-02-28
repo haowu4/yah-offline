@@ -512,7 +512,7 @@ export class SearchDBClient {
         return result.changes
     }
 
-    private getArticleById(id: number): ArticleRecord {
+    getArticleById(id: number): ArticleRecord {
         const row = this.db
             .prepare(
                 `
@@ -709,36 +709,7 @@ export class SearchDBClient {
 
         if (!row) return null
 
-        const relatedRows =
-            row.query_id !== null && row.intent_id !== null
-                ? (this.db
-                      .prepare(
-                          `
-                          SELECT
-                              qi.id,
-                              qi.intent,
-                              qi.filetype,
-                              (
-                                  SELECT a.slug
-                                  FROM query_intent_article qia2
-                                  JOIN article a ON a.id = qia2.article_id
-                                  WHERE qia2.intent_id = qi.id
-                                  ORDER BY a.id ASC
-                                  LIMIT 1
-                              ) AS article_slug
-                          FROM query_query_intent qqi
-                          JOIN query_intent qi ON qi.id = qqi.intent_id
-                          WHERE qqi.query_id = ? AND qi.id != ?
-                          ORDER BY qi.id ASC
-                          `
-                      )
-                      .all(row.query_id, row.intent_id) as Array<{
-                      id: number
-                      intent: string
-                      filetype: string
-                      article_slug: string | null
-                  }>)
-                : []
+        const recommendedArticles = this.listArticleRecommendations(row.article_id)
 
         const payload: ArticleDetailPayload = {
             article: {
@@ -755,12 +726,7 @@ export class SearchDBClient {
                 generatedBy: row.article_generated_by,
                 createdAt: row.article_created_at,
             },
-            relatedIntents: relatedRows.map((relatedRow) => ({
-                id: relatedRow.id,
-                intent: relatedRow.intent,
-                filetype: relatedRow.filetype,
-                articleSlug: relatedRow.article_slug,
-            })),
+            recommendedArticles,
         }
 
         if (row.intent_id !== null && row.query_id !== null && row.intent_value !== null && row.intent_filetype !== null) {
@@ -803,6 +769,63 @@ export class SearchDBClient {
             .get(slug.trim()) as { id: number } | undefined
         if (!row) return null
         return this.getArticleById(row.id)
+    }
+
+    createArticleRecommendation(args: {
+        sourceArticleId: number
+        recommendedArticleId: number
+        position?: number | null
+    }): void {
+        this.db
+            .prepare(
+                `
+                INSERT INTO article_recommendation (source_article_id, recommended_article_id, position)
+                VALUES (?, ?, ?)
+                ON CONFLICT(source_article_id, recommended_article_id) DO NOTHING
+                `
+            )
+            .run(args.sourceArticleId, args.recommendedArticleId, args.position ?? null)
+    }
+
+    listArticleRecommendations(sourceArticleId: number): Array<Pick<ArticleRecord, "id" | "title" | "slug" | "filetype" | "summary" | "status" | "createdAt">> {
+        const rows = this.db
+            .prepare(
+                `
+                SELECT
+                    a.id,
+                    a.title,
+                    a.slug,
+                    a.filetype,
+                    a.summary,
+                    a.status,
+                    a.created_at,
+                    ar.position
+                FROM article_recommendation ar
+                JOIN article a ON a.id = ar.recommended_article_id
+                WHERE ar.source_article_id = ?
+                ORDER BY COALESCE(ar.position, 9999) ASC, ar.id ASC
+                `
+            )
+            .all(sourceArticleId) as Array<{
+            id: number
+            title: string
+            slug: string
+            filetype: string
+            summary: string
+            status: "preview_ready" | "content_generating" | "content_ready" | "content_failed"
+            created_at: string
+            position: number | null
+        }>
+
+        return rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            slug: row.slug,
+            filetype: row.filetype,
+            summary: row.summary,
+            status: row.status,
+            createdAt: row.created_at,
+        }))
     }
 
     setArticleContentStatus(args: {
@@ -957,6 +980,7 @@ export class SearchDBClient {
         query_id: number
         kind: GenerationOrderKind
         intent_id: number | null
+        article_id: number | null
         status: GenerationOrderStatus
         requested_by: "user" | "system"
         request_payload_json: string
@@ -972,6 +996,7 @@ export class SearchDBClient {
             queryId: row.query_id,
             kind: row.kind,
             intentId: row.intent_id,
+            articleId: row.article_id,
             status: row.status,
             requestedBy: row.requested_by,
             requestPayloadJson: row.request_payload_json,
@@ -988,20 +1013,22 @@ export class SearchDBClient {
         queryId: number
         kind: GenerationOrderKind
         intentId?: number | null
+        articleId?: number | null
         requestedBy?: "user" | "system"
         requestPayload?: unknown
     }): GenerationOrderRecord {
         const result = this.db
             .prepare(
                 `
-                INSERT INTO generation_order (query_id, kind, intent_id, requested_by, request_payload_json)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO generation_order (query_id, kind, intent_id, article_id, requested_by, request_payload_json)
+                VALUES (?, ?, ?, ?, ?, ?)
                 `
             )
             .run(
                 args.queryId,
                 args.kind,
                 args.intentId ?? null,
+                args.articleId ?? null,
                 args.requestedBy ?? "user",
                 JSON.stringify(args.requestPayload ?? {})
             )
@@ -1013,7 +1040,7 @@ export class SearchDBClient {
         const row = this.db
             .prepare(
                 `
-                SELECT id, query_id, kind, intent_id, status, requested_by, request_payload_json,
+                SELECT id, query_id, kind, intent_id, article_id, status, requested_by, request_payload_json,
                        result_summary_json, error_message, started_at, finished_at, created_at, updated_at
                 FROM generation_order
                 WHERE id = ?
@@ -1025,6 +1052,7 @@ export class SearchDBClient {
                 query_id: number
                 kind: GenerationOrderKind
                 intent_id: number | null
+                article_id: number | null
                 status: GenerationOrderStatus
                 requested_by: "user" | "system"
                 request_payload_json: string
@@ -1055,7 +1083,7 @@ export class SearchDBClient {
         const rows = this.db
             .prepare(
                 `
-                SELECT id, query_id, kind, intent_id, status, requested_by, request_payload_json,
+                SELECT id, query_id, kind, intent_id, article_id, status, requested_by, request_payload_json,
                        result_summary_json, error_message, started_at, finished_at, created_at, updated_at
                 FROM generation_order
                 WHERE (? IS NULL OR status = ?)
@@ -1070,6 +1098,7 @@ export class SearchDBClient {
                 query_id: number
                 kind: GenerationOrderKind
                 intent_id: number | null
+                article_id: number | null
                 status: GenerationOrderStatus
                 requested_by: "user" | "system"
                 request_payload_json: string
@@ -1104,15 +1133,16 @@ export class SearchDBClient {
     }
 
     listActiveOrdersForScope(args: {
-        scopeType: "query" | "intent"
+        scopeType: "query" | "intent" | "article"
         queryId: number
         intentId?: number
+        articleId?: number
     }): GenerationOrderRecord[] {
         const rows = args.scopeType === "query"
             ? (this.db
                 .prepare(
                     `
-                    SELECT id, query_id, kind, intent_id, status, requested_by, request_payload_json,
+                    SELECT id, query_id, kind, intent_id, article_id, status, requested_by, request_payload_json,
                            result_summary_json, error_message, started_at, finished_at, created_at, updated_at
                     FROM generation_order
                     WHERE query_id = ? AND status IN ('queued', 'running')
@@ -1124,6 +1154,7 @@ export class SearchDBClient {
                     query_id: number
                     kind: GenerationOrderKind
                     intent_id: number | null
+                    article_id: number | null
                     status: GenerationOrderStatus
                     requested_by: "user" | "system"
                     request_payload_json: string
@@ -1134,10 +1165,11 @@ export class SearchDBClient {
                     created_at: string
                     updated_at: string
                 }>)
-            : (this.db
+            : args.scopeType === "intent"
+                ? (this.db
                 .prepare(
                     `
-                    SELECT id, query_id, kind, intent_id, status, requested_by, request_payload_json,
+                    SELECT id, query_id, kind, intent_id, article_id, status, requested_by, request_payload_json,
                            result_summary_json, error_message, started_at, finished_at, created_at, updated_at
                     FROM generation_order
                     WHERE query_id = ? AND intent_id = ? AND status IN ('queued', 'running')
@@ -1149,6 +1181,7 @@ export class SearchDBClient {
                     query_id: number
                     kind: GenerationOrderKind
                     intent_id: number | null
+                    article_id: number | null
                     status: GenerationOrderStatus
                     requested_by: "user" | "system"
                     request_payload_json: string
@@ -1159,6 +1192,32 @@ export class SearchDBClient {
                     created_at: string
                     updated_at: string
                 }>)
+                : (this.db
+                    .prepare(
+                        `
+                        SELECT id, query_id, kind, intent_id, article_id, status, requested_by, request_payload_json,
+                               result_summary_json, error_message, started_at, finished_at, created_at, updated_at
+                        FROM generation_order
+                        WHERE article_id = ? AND status IN ('queued', 'running')
+                        ORDER BY id DESC
+                        `
+                    )
+                    .all(args.articleId ?? -1) as Array<{
+                        id: number
+                        query_id: number
+                        kind: GenerationOrderKind
+                        intent_id: number | null
+                        article_id: number | null
+                        status: GenerationOrderStatus
+                        requested_by: "user" | "system"
+                        request_payload_json: string
+                        result_summary_json: string | null
+                        error_message: string | null
+                        started_at: string | null
+                        finished_at: string | null
+                        created_at: string
+                        updated_at: string
+                    }>)
 
         return rows.map((row) => this.toGenerationOrder(row))
     }
@@ -1570,7 +1629,7 @@ export class SearchDBClient {
 
     tryAcquireLock(args: {
         orderId: number
-        scopeType: "query" | "intent"
+        scopeType: "query" | "intent" | "article"
         scopeKey: string
         leaseSeconds: number
     }): { ok: boolean; ownerOrderId?: number } {

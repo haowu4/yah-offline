@@ -127,6 +127,16 @@ This is development-mode content for query: **${args.query}**.
         content,
         generatedBy: "dev:dev-search-content",
       },
+      recommendations: [
+        {
+          title: `Background concepts for ${title}`,
+          summary: `Foundational context and terminology to better understand ${title}.`,
+        },
+        {
+          title: `Common pitfalls in ${title}`,
+          summary: `Typical mistakes, tradeoffs, and debugging strategies related to ${title}.`,
+        },
+      ],
     }
   }
 

@@ -136,6 +136,39 @@
   padding-left: 18px;
 }
 
+.sidebarSkeleton {
+  display: grid;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+
+.sidebarSkeletonLine,
+.sidebarSkeletonLineShort {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #edf1f7;
+  height: 12px;
+}
+
+.sidebarSkeletonLine {
+  width: 95%;
+}
+
+.sidebarSkeletonLineShort {
+  width: 70%;
+}
+
+.sidebarSkeletonLine::after,
+.sidebarSkeletonLineShort::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.55) 50%, rgba(255, 255, 255, 0) 100%);
+  animation: article-skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
 .contentSkeleton {
   display: grid;
   gap: 12px;

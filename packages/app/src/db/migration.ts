@@ -49,7 +49,11 @@ export const migrations: Migration[] = [
             title TEXT NOT NULL,
             slug TEXT NOT NULL UNIQUE,
             filetype TEXT NOT NULL DEFAULT 'md',
-            content TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            content TEXT,
+            status TEXT NOT NULL DEFAULT 'preview_ready' CHECK (status IN ('preview_ready', 'content_generating', 'content_ready', 'content_failed')),
+            content_error_message TEXT,
+            content_updated_at TEXT,
             generated_by TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -122,7 +126,7 @@ export const migrations: Migration[] = [
         CREATE TABLE IF NOT EXISTS generation_order (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             query_id INTEGER NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('query_full', 'intent_regen', 'article_regen_keep_title')),
+            kind TEXT NOT NULL CHECK (kind IN ('query_full', 'intent_regen', 'article_regen_keep_title', 'article_content_generate')),
             intent_id INTEGER,
             status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
             requested_by TEXT NOT NULL DEFAULT 'user' CHECK (requested_by IN ('user', 'system')),
@@ -170,6 +174,7 @@ export const migrations: Migration[] = [
             intent_id INTEGER,
             article_id INTEGER,
             order_id INTEGER NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('preview', 'content')),
             status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
             attempts INTEGER,
             duration_ms INTEGER,

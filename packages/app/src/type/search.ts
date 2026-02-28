@@ -19,13 +19,17 @@ export type ArticleRecord = {
     title: string
     slug: string
     filetype: string
-    content: string
+    summary: string
+    content: string | null
+    status: "preview_ready" | "content_generating" | "content_ready" | "content_failed"
+    contentErrorMessage: string | null
+    contentUpdatedAt: string | null
     generatedBy: string | null
     createdAt: string
 }
 
 export type ArticleSummary = Pick<ArticleRecord, "id" | "title" | "slug" | "filetype" | "generatedBy" | "createdAt"> & {
-    snippet: string
+    summary: string
 }
 
 export type QueryIntentWithArticles = {
@@ -64,7 +68,7 @@ export type SearchStreamArticleCreatedEvent = {
         id: number
         title: string
         slug: string
-        snippet: string
+        summary: string
     }
 }
 

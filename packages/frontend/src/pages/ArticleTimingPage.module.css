@@ -93,13 +93,13 @@
 }
 
 .table {
-  min-width: 1300px;
+  min-width: 1380px;
 }
 
 .head,
 .row {
   display: grid;
-  grid-template-columns: 84px 110px 80px 80px 80px 80px 90px 100px 90px 180px 180px;
+  grid-template-columns: 84px 110px 90px 80px 80px 80px 80px 90px 100px 90px 180px 180px;
 }
 
 .head {

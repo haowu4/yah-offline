@@ -1,10 +1,10 @@
 import { CodeBlock, MarkdownPreview } from '@ootc/markdown'
 import { useEffect, useState } from 'react'
 import { FiRefreshCw } from 'react-icons/fi'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { useI18n } from '../i18n/useI18n'
 import type { ApiArticleDetail } from '../lib/api/search'
-import { createOrder, getArticleBySlug, getArticleGenerationEta, isResourceLockedError, streamOrder } from '../lib/api/search'
+import { createOrder, getArticleBySlug, getGenerationEtaByAction, isResourceLockedError, streamOrder } from '../lib/api/search'
 import styles from './ArticlePage.module.css'
 import '@ootc/markdown/style.css';
 
@@ -26,7 +26,6 @@ function formatDurationShort(ms: number): string {
 
 export function ArticlePage() {
   const { t, locale } = useI18n()
-  const navigate = useNavigate()
   const params = useParams()
   const [searchParams] = useSearchParams()
   const [isRegenerating, setIsRegenerating] = useState(false)
@@ -49,7 +48,7 @@ export function ArticlePage() {
 
   useEffect(() => {
     let cancelled = false
-    void getArticleGenerationEta()
+    void getGenerationEtaByAction('content')
       .then((payload) => {
         if (cancelled) return
         setEtaEnabled(payload.enabled)
@@ -111,6 +110,50 @@ export function ArticlePage() {
     }
   }, [slug, t])
 
+  useEffect(() => {
+    if (!state.payload) return
+    const payload = state.payload
+    const article = payload.article
+    const orderId = payload.activeOrderId
+    if (article.content && article.status === 'content_ready') return
+    if (typeof orderId !== 'number' || orderId <= 0) return
+
+    setIsRegenerating(true)
+    let mounted = true
+    const unsubscribe = streamOrder({
+      orderId,
+      onEvent: async (event) => {
+        if (!mounted) return
+        if (event.type === 'order.completed' || event.type === 'order.failed') {
+          unsubscribe()
+          try {
+            const refreshed = await getArticleBySlug(article.slug)
+            if (!mounted) return
+            setState({ isLoading: false, error: null, payload: refreshed })
+          } catch (error) {
+            if (!mounted) return
+            setState({
+              isLoading: false,
+              error: error instanceof Error ? error.message : t('article.error.load'),
+              payload: null,
+            })
+          } finally {
+            if (mounted) setIsRegenerating(false)
+          }
+        }
+      },
+      onError: () => {
+        if (!mounted) return
+        setIsRegenerating(false)
+      },
+    })
+
+    return () => {
+      mounted = false
+      unsubscribe()
+    }
+  }, [state.payload, t])
+
   if (state.isLoading) return <div className={styles.loading}>{t('article.loading')}</div>
 
   if (state.error || !state.payload) {
@@ -167,7 +210,7 @@ export function ArticlePage() {
       let orderId: number
       try {
         const created = await createOrder({
-          kind: 'article_regen_keep_title',
+          kind: 'article_content_generate',
           queryId: query.id,
           intentId: currentIntentId,
         })
@@ -184,21 +227,6 @@ export function ArticlePage() {
         orderId,
         onEvent: async (event) => {
           if (settled) return
-          if (event.type === 'article.upserted' && event.intentId === currentIntentId) {
-            settled = true
-            unsubscribe()
-            const nextSlug = event.article.slug
-            const nextHref = `/content/${encodeURIComponent(nextSlug)}?query=${encodeURIComponent(queryText || query.value)}${languageText && languageText !== 'auto' ? `&lang=${encodeURIComponent(languageText)}` : ''}`
-            navigate(nextHref, { replace: true })
-            try {
-              const refreshed = await getArticleBySlug(nextSlug)
-              setState({ isLoading: false, error: null, payload: refreshed })
-            } finally {
-              setIsRegenerating(false)
-            }
-            return
-          }
-
           if (event.type === 'order.failed' || event.type === 'order.completed') {
             settled = true
             unsubscribe()
@@ -234,6 +262,7 @@ export function ArticlePage() {
             <p className={styles.createdAt}>
               {t('article.meta.createdAt', { value: createdAtLabel })}
             </p>
+            <p className={styles.generatedBy}>{article.summary}</p>
             {article.generatedBy ? (
               <p className={styles.generatedBy}>
                 {t('article.meta.generatedBy', { value: article.generatedBy })}
@@ -255,7 +284,9 @@ export function ArticlePage() {
             </div>
           ) : null}
         </div>
-        {isMarkdown ? (
+        {!article.content ? (
+          <div className={styles.loading}>{isRegenerating ? t('article.action.regenerating') : t('article.loading')}</div>
+        ) : isMarkdown ? (
           <MarkdownPreview content={article.content} />
         ) : (
           <CodeBlock code={article.content} language={codeLanguage} />

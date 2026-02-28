@@ -13,6 +13,7 @@ export function ArticleTimingPage() {
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
   const [statusFilter, setStatusFilter] = useState<ApiArticleGenerationRun['status'] | ''>('')
+  const [kindFilter, setKindFilter] = useState<ApiArticleGenerationRun['kind'] | ''>('')
 
   const loadRuns = useCallback(async (options?: { silent?: boolean }) => {
     const silent = Boolean(options?.silent)
@@ -22,6 +23,7 @@ export function ArticleTimingPage() {
         limit: PAGE_SIZE,
         offset,
         status: statusFilter || undefined,
+        kind: kindFilter || undefined,
       })
       setRuns(payload.runs)
       setTotal(payload.pagination.total)
@@ -31,7 +33,7 @@ export function ArticleTimingPage() {
     } finally {
       if (!silent) setIsLoading(false)
     }
-  }, [offset, statusFilter])
+  }, [offset, statusFilter, kindFilter])
 
   useEffect(() => {
     document.title = 'Generation Performance | yah'
@@ -39,7 +41,7 @@ export function ArticleTimingPage() {
 
   useEffect(() => {
     setOffset(0)
-  }, [statusFilter])
+  }, [statusFilter, kindFilter])
 
   useEffect(() => {
     void loadRuns()
@@ -98,6 +100,14 @@ export function ArticleTimingPage() {
               <option value="failed">failed</option>
             </select>
           </label>
+          <label className={styles.filterGroup}>
+            <span>Kind</span>
+            <select className={styles.filterSelect} value={kindFilter} onChange={(event) => setKindFilter(event.target.value as ApiArticleGenerationRun['kind'] | '')}>
+              <option value="">All</option>
+              <option value="preview">preview</option>
+              <option value="content">content</option>
+            </select>
+          </label>
         </div>
 
         <div className={styles.tableWrap}>
@@ -105,6 +115,7 @@ export function ArticleTimingPage() {
             <div className={styles.head}>
               <div className={styles.cell}>Run ID</div>
               <div className={styles.cell}>Status</div>
+              <div className={styles.cell}>Kind</div>
               <div className={styles.cell}>Order</div>
               <div className={styles.cell}>Query</div>
               <div className={styles.cell}>Intent</div>
@@ -120,6 +131,7 @@ export function ArticleTimingPage() {
               <div key={run.id} className={styles.row}>
                 <span className={`${styles.cell} ${styles.mono}`}>#{run.id}</span>
                 <span className={styles.cell}><span className={statusClassName(run.status)}>{run.status}</span></span>
+                <span className={styles.cell}>{run.kind}</span>
                 <span className={`${styles.cell} ${styles.mono}`}>#{run.orderId}</span>
                 <span className={`${styles.cell} ${styles.mono}`}>#{run.queryId}</span>
                 <span className={`${styles.cell} ${styles.mono}`}>{run.intentId ? `#${run.intentId}` : '-'}</span>

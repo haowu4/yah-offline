@@ -416,7 +416,7 @@ export function SearchUI(props: SearchUIProps) {
                       >
                         {article.title}
                       </Link>
-                      <p className={styles.articleSnippet}>{article.snippet}</p>
+                      <p className={styles.articleSnippet}>{article.summary}</p>
                     </li>
                   ))}
                 </ul>

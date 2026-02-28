@@ -23,6 +23,7 @@ export type ApiArticleGenerationRun = {
   intentId: number | null
   articleId: number | null
   orderId: number
+  kind: 'preview' | 'content'
   status: 'running' | 'completed' | 'failed'
   attempts: number | null
   durationMs: number | null
@@ -38,6 +39,7 @@ export async function listArticleGenerationRuns(args?: {
   limit?: number
   offset?: number
   status?: ApiArticleGenerationRun['status']
+  kind?: ApiArticleGenerationRun['kind']
 }): Promise<{
   pagination: { limit: number; offset: number; total: number }
   runs: ApiArticleGenerationRun[]
@@ -51,6 +53,9 @@ export async function listArticleGenerationRuns(args?: {
   }
   if (args?.status) {
     params.set('status', args.status)
+  }
+  if (args?.kind) {
+    params.set('kind', args.kind)
   }
   const query = params.toString()
   return apiFetch(`/article-generation-runs${query ? `?${query}` : ''}`)

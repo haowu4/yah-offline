@@ -160,6 +160,7 @@ export function OrderLogsPage() {
               <option value="query_full">query_full</option>
               <option value="intent_regen">intent_regen</option>
               <option value="article_regen_keep_title">article_regen_keep_title</option>
+              <option value="article_content_generate">article_content_generate</option>
             </select>
           </label>
         </div>

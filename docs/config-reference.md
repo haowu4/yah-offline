@@ -44,6 +44,11 @@ Key groups:
   - `search.article_generation_eta.enabled`
   - `search.article_generation_eta.sample_size`
 
+Notes:
+- Search ETA endpoint is action-scoped: `/api/search/eta?action=preview|content`.
+- `preview` uses one-call query preview generation timing.
+- `content` uses on-demand full article content generation timing.
+
 ## `.env` Loading Order
 
 Backend loads env from:

@@ -11,7 +11,7 @@ export type ApiArticleSummary = {
   title: string
   slug: string
   filetype: string
-  snippet: string
+  summary: string
   createdAt: string
 }
 
@@ -41,6 +41,7 @@ export type ApiSearchSuggestionsPayload = {
 
 export type ArticleGenerationEtaPayload = {
   enabled: boolean
+  action: 'preview' | 'content'
   sampleSize: number
   sampleCount: number
   averageDurationMs: number | null
@@ -53,7 +54,11 @@ export type ApiArticleDetail = {
     title: string
     slug: string
     filetype: string
-    content: string
+    summary: string
+    content: string | null
+    status: 'preview_ready' | 'content_generating' | 'content_ready' | 'content_failed'
+    contentErrorMessage: string | null
+    contentUpdatedAt: string | null
     generatedBy: string | null
     createdAt: string
   }
@@ -70,9 +75,10 @@ export type ApiArticleDetail = {
     filetype: string
     articleSlug: string | null
   }>
+  activeOrderId?: number | null
 }
 
-export type GenerationOrderKind = 'query_full' | 'intent_regen' | 'article_regen_keep_title'
+export type GenerationOrderKind = 'query_full' | 'intent_regen' | 'article_regen_keep_title' | 'article_content_generate'
 
 export type SearchStreamEvent =
   | {
@@ -107,7 +113,7 @@ export type SearchStreamEvent =
         id: number
         title: string
         slug: string
-        snippet: string
+        summary: string
       }
     }
   | {
@@ -284,7 +290,11 @@ export async function getSearchSuggestions(args?: {
 }
 
 export async function getArticleGenerationEta(): Promise<ArticleGenerationEtaPayload> {
-  return apiFetch<ArticleGenerationEtaPayload>('/search/eta')
+  return apiFetch<ArticleGenerationEtaPayload>('/search/eta?action=content')
+}
+
+export async function getGenerationEtaByAction(action: 'preview' | 'content'): Promise<ArticleGenerationEtaPayload> {
+  return apiFetch<ArticleGenerationEtaPayload>(`/search/eta?action=${action}`)
 }
 
 export function streamOrder(args: {

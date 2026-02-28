@@ -22,7 +22,7 @@ export type SearchArticle = {
   id: number
   title: string
   slug: string
-  snippet: string
+  summary: string
 }
 
 export type SearchIntent = {
@@ -67,7 +67,7 @@ type SearchContextValue = SearchState & {
     intents: Array<{
       id: number
       intent: string
-      articles: Array<{ id: number; title: string; slug: string; snippet: string }>
+      articles: Array<{ id: number; title: string; slug: string; summary: string }>
     }>
   }) => void
   rerunIntentResolve: () => Promise<void>
@@ -563,7 +563,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       intents: Array<{
         id: number
         intent: string
-        articles: Array<{ id: number; title: string; slug: string; snippet: string }>
+        articles: Array<{ id: number; title: string; slug: string; summary: string }>
       }>
     }) => {
       dispatch({
@@ -714,7 +714,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     let orderId: number
     try {
       const created = await createOrder({
-        kind: 'article_regen_keep_title',
+        kind: 'article_content_generate',
         queryId,
         intentId,
       })

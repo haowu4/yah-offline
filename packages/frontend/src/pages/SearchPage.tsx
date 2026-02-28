@@ -5,7 +5,7 @@ import { useSearchCtx } from '../ctx/SearchCtx'
 import { useLanguageCtx } from '../ctx/LanguageCtx'
 import { useI18n } from '../i18n/useI18n'
 import {
-  getArticleGenerationEta,
+  getGenerationEtaByAction,
   getSearchSuggestions,
   type ApiSearchSuggestionItem,
   type ArticleGenerationEtaPayload,
@@ -24,7 +24,6 @@ const DEFAULT_FILETYPE_ALLOWLIST = new Set([
   'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'rb', 'php',
 ])
 const DEFAULT_ARTICLE_ETA_MS = 8000
-const INITIAL_EXPECTED_ARTICLE_COUNT = 4
 
 function parseFiletypeOperators(query: string): { filetypes: string[] } {
   const filetypes: string[] = []
@@ -126,7 +125,7 @@ export function SearchPage() {
 
   useEffect(() => {
     let cancelled = false
-    void getArticleGenerationEta()
+    void getGenerationEtaByAction('preview')
       .then((payload) => {
         if (cancelled) return
         setEta(payload)
@@ -159,13 +158,10 @@ export function SearchPage() {
   }, [search.isLoading])
 
   const elapsedLabel = search.isLoading ? formatDurationShort(elapsedMs) : null
-  const expectedArticleCount = search.queryIntents.length > 0
-    ? Math.max(1, search.queryIntents.length)
-    : INITIAL_EXPECTED_ARTICLE_COUNT
   const averageDurationMs = eta?.enabled
     ? (typeof eta.averageDurationMs === 'number' && eta.averageDurationMs > 0 ? eta.averageDurationMs : DEFAULT_ARTICLE_ETA_MS)
     : null
-  const typicalTotalMs = averageDurationMs !== null ? averageDurationMs * expectedArticleCount : null
+  const typicalTotalMs = averageDurationMs
   const typicalTotalLabel = typicalTotalMs !== null ? formatDurationShort(typicalTotalMs) : null
   const etaMs = typicalTotalMs !== null ? Math.max(0, typicalTotalMs - elapsedMs) : null
   const etaLabel = etaMs !== null ? formatDurationShort(etaMs) : null

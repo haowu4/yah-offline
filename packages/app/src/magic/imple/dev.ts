@@ -47,6 +47,10 @@ function normalizeIntents(intents: string[]): string[] {
   return [...unique].slice(0, 5)
 }
 
+function toSummary(intent: string): string {
+  return `Practical overview for ${intent}, including key steps, tradeoffs, and common pitfalls.`
+}
+
 export class DevMagicApi extends AbstractMagicApi {
   providerName(_args: {}): string {
     return "dev"
@@ -68,12 +72,17 @@ export class DevMagicApi extends AbstractMagicApi {
     await wait(randomBetween(350, 900))
     const q = args.query.trim()
     const filetype = normalizeFiletype(args.filetype)
+    const intents = normalizeIntents([
+      `${q} (${filetype})`,
+      `step-by-step guide for ${q} (${filetype})`,
+      `troubleshooting ${q} (${filetype})`,
+    ])
     return {
-      intents: normalizeIntents([
-        `${q} (${filetype})`,
-        `step-by-step guide for ${q} (${filetype})`,
-        `troubleshooting ${q} (${filetype})`,
-      ]),
+      items: intents.map((intent) => ({
+        intent,
+        title: intent.replace(/^\w/, (char) => char.toUpperCase()),
+        summary: toSummary(intent),
+      })),
     }
   }
 

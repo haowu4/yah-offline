@@ -2,6 +2,14 @@
   "name": "@ootc/yah",
   "version": "0.0.1",
   "type": "module",
+  "files": [
+    "src",
+    "scripts",
+    "data",
+    "runtime",
+    "tests",
+    "tsconfig.json"
+  ],
   "scripts": {
     "dev": "tsx watch src/cli.ts start",
     "dev:cli": "node --import tsx src/cli.ts",

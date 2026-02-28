@@ -176,14 +176,6 @@ export function createSearchGenerateHandler(args: {
       }
     }
 
-    const payload = (() => {
-      try {
-        return JSON.parse(order.requestPayloadJson || "{}") as { keepTitle?: boolean }
-      } catch {
-        return {}
-      }
-    })()
-
     args.eventDispatcher.emit({
       orderId: order.id,
       event: {
@@ -204,8 +196,6 @@ export function createSearchGenerateHandler(args: {
     })
 
     try {
-      let intentRecords: Array<{ id: number; intent: string; filetype: string }> = []
-
       if (order.kind === "query_full") {
         searchDB.clearQueryIntentLinks(order.queryId)
         args.eventDispatcher.emit({
@@ -219,22 +209,55 @@ export function createSearchGenerateHandler(args: {
           },
         })
 
-        const intentResult = await callWithRetry({
-          trigger: "intent-generation",
-          query: cleanQuery,
+        const previewRunId = searchDB.createArticleGenerationRun({
           queryId: order.queryId,
+          intentId: null,
+          articleId: null,
+          kind: "preview",
           orderId: order.id,
-          run: () =>
-            args.magicApi.resolveIntent({
-              query: cleanQuery,
-              language: query.language,
-              filetype: queryFiletype,
-            }),
         })
+        const previewStartMs = Date.now()
+        let previewAttempt = 0
+        let previewLlmDurationMs = 0
+        let previewResult: { result: Awaited<ReturnType<typeof args.magicApi.resolveIntent>>; attempt: number; durationMs: number }
+        try {
+          previewResult = await callWithRetry({
+            trigger: "intent-generation",
+            query: cleanQuery,
+            queryId: order.queryId,
+            orderId: order.id,
+            run: () =>
+              args.magicApi.resolveIntent({
+                query: cleanQuery,
+                language: query.language,
+                filetype: queryFiletype,
+              }),
+          })
+          previewAttempt = previewResult.attempt
+          previewLlmDurationMs = previewResult.durationMs
+          searchDB.completeArticleGenerationRun({
+            runId: previewRunId,
+            articleId: null,
+            attempts: previewAttempt,
+            durationMs: Date.now() - previewStartMs,
+            llmDurationMs: previewLlmDurationMs,
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Preview generation failed"
+          const attempts = (error as { llmAttempts?: number } | null)?.llmAttempts ?? Math.max(1, previewAttempt)
+          const lastLlmDurationMs = (error as { llmDurationMs?: number } | null)?.llmDurationMs ?? previewLlmDurationMs
+          searchDB.failArticleGenerationRun({
+            runId: previewRunId,
+            attempts,
+            durationMs: Date.now() - previewStartMs,
+            llmDurationMs: lastLlmDurationMs || null,
+            errorMessage,
+          })
+          throw error
+        }
 
-        const intents = intentResult.result.intents.length > 0 ? intentResult.result.intents : [cleanQuery]
-        intentRecords = intents.map((intentCandidate) => {
-          const intent = searchDB.upsertIntent(order.queryId, intentCandidate, queryFiletype)
+        for (const item of previewResult.result.items) {
+          const intent = searchDB.upsertIntent(order.queryId, item.intent, queryFiletype)
           args.eventDispatcher.emit({
             orderId: order.id,
             event: {
@@ -247,23 +270,45 @@ export function createSearchGenerateHandler(args: {
               },
             },
           })
-          return { id: intent.id, intent: intent.intent, filetype: intent.filetype }
-        })
-      } else if (order.intentId) {
+          const article = searchDB.createArticle({
+            intentId: intent.id,
+            title: item.title,
+            summary: item.summary,
+            filetype: intent.filetype,
+            content: null,
+            status: "preview_ready",
+            contentErrorMessage: null,
+            generatedBy: `${args.magicApi.providerName({})}:preview`,
+            replaceExistingForIntent: true,
+          })
+          args.eventDispatcher.emit({
+            orderId: order.id,
+            event: {
+              type: "article.upserted",
+              orderId: order.id,
+              queryId: order.queryId,
+              intentId: intent.id,
+              article: {
+                id: article.id,
+                title: article.title,
+                slug: article.slug,
+                summary: article.summary,
+              },
+            },
+          })
+        }
+      } else {
+        if (!order.intentId) {
+          throw new Error("intent_id is required for content generation")
+        }
         const found = searchDB.listIntentsByQueryId(order.queryId).find((item) => item.id === order.intentId)
         if (!found) {
           throw new Error("Target intent not found for query")
         }
-        intentRecords = [{ id: found.id, intent: found.intent, filetype: found.filetype }]
-      } else {
-        throw new Error("intent_id is required for this order kind")
-      }
-
-      for (const intentRecord of intentRecords) {
         const intentLock = searchDB.tryAcquireLock({
           orderId: order.id,
           scopeType: "intent",
-          scopeKey: `intent:${order.queryId}:${intentRecord.id}`,
+          scopeKey: `intent:${order.queryId}:${found.id}`,
           leaseSeconds: 60,
         })
         if (!intentLock.ok) {
@@ -277,54 +322,59 @@ export function createSearchGenerateHandler(args: {
             orderId: order.id,
             queryId: order.queryId,
             stage: "article",
-            message: `Generating article for intent ${intentRecord.id}`,
+            message: `Generating article content for intent ${found.id}`,
           },
+        })
+
+        const currentArticle = searchDB.getPrimaryArticleByIntentId(found.id)
+        if (!currentArticle) {
+          throw new Error("Preview article not found for intent")
+        }
+
+        searchDB.setArticleContentStatus({
+          articleId: currentArticle.id,
+          status: "content_generating",
+          contentErrorMessage: null,
         })
 
         const runId = searchDB.createArticleGenerationRun({
           queryId: order.queryId,
-          intentId: intentRecord.id,
+          intentId: found.id,
+          articleId: currentArticle.id,
+          kind: "content",
           orderId: order.id,
         })
         const articleStartMs = Date.now()
-        let article: ReturnType<typeof searchDB.createArticle> | null = null
         let llmAttempt = 0
         let llmDurationMs = 0
-
         try {
           const articleResult = await callWithRetry({
             trigger: "article-generation",
             query: cleanQuery,
-            intent: intentRecord.intent,
+            intent: found.intent,
             queryId: order.queryId,
-            intentId: intentRecord.id,
+            intentId: found.id,
             orderId: order.id,
             run: () =>
               args.magicApi.createArticle({
                 query: cleanQuery,
-                intent: intentRecord.intent,
+                intent: found.intent,
                 language: query.language,
-                filetype: intentRecord.filetype,
+                filetype: found.filetype,
               }),
           })
           llmAttempt = articleResult.attempt
           llmDurationMs = articleResult.durationMs
-
-          const shouldKeepTitle = order.kind === "article_regen_keep_title" || payload.keepTitle === true
-          article = searchDB.createArticle({
-            intentId: intentRecord.id,
-            title: articleResult.result.article.title,
-            slug: articleResult.result.article.slug,
-            filetype: intentRecord.filetype,
+          searchDB.setArticleContentStatus({
+            articleId: currentArticle.id,
+            status: "content_ready",
             content: articleResult.result.article.content,
+            contentErrorMessage: null,
             generatedBy: articleResult.result.article.generatedBy,
-            replaceExistingForIntent: order.kind !== "query_full",
-            keepTitleWhenReplacing: shouldKeepTitle,
           })
-
           searchDB.completeArticleGenerationRun({
             runId,
-            articleId: article.id,
+            articleId: currentArticle.id,
             attempts: llmAttempt,
             durationMs: Date.now() - articleStartMs,
             llmDurationMs,
@@ -333,6 +383,11 @@ export function createSearchGenerateHandler(args: {
           const errorMessage = error instanceof Error ? error.message : "Article generation failed"
           const attempts = (error as { llmAttempts?: number } | null)?.llmAttempts ?? Math.max(1, llmAttempt)
           const lastLlmDurationMs = (error as { llmDurationMs?: number } | null)?.llmDurationMs ?? llmDurationMs
+          searchDB.setArticleContentStatus({
+            articleId: currentArticle.id,
+            status: "content_failed",
+            contentErrorMessage: errorMessage,
+          })
           searchDB.failArticleGenerationRun({
             runId,
             attempts,
@@ -342,31 +397,6 @@ export function createSearchGenerateHandler(args: {
           })
           throw error
         }
-        if (!article) {
-          throw new Error("Article creation did not produce a record")
-        }
-
-        const queryResult = searchDB.getQueryResult(order.queryId)
-        const snippet = queryResult?.intents
-          .find((intent) => intent.id === intentRecord.id)
-          ?.articles.find((candidate) => candidate.id === article.id)
-          ?.snippet || ""
-
-        args.eventDispatcher.emit({
-          orderId: order.id,
-          event: {
-            type: "article.upserted",
-            orderId: order.id,
-            queryId: order.queryId,
-            intentId: intentRecord.id,
-            article: {
-              id: article.id,
-              title: article.title,
-              slug: article.slug,
-              snippet,
-            },
-          },
-        })
       }
 
       args.eventDispatcher.emit({

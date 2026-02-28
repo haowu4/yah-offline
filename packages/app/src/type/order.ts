@@ -2,6 +2,7 @@ export type GenerationOrderKind =
   | "query_full"
   | "intent_regen"
   | "article_regen_keep_title"
+  | "article_content_generate"
 
 export type GenerationOrderStatus =
   | "queued"
@@ -69,7 +70,7 @@ export type GenerationArticleUpsertedEvent = {
     id: number
     title: string
     slug: string
-    snippet: string
+    summary: string
   }
 }
 

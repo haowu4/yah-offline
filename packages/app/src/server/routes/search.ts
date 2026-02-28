@@ -236,7 +236,12 @@ function shouldTrackRecentQuery(args: {
 }
 
 function parseOrderKind(raw: unknown): GenerationOrderKind | null {
-  if (raw === "query_full" || raw === "intent_regen" || raw === "article_regen_keep_title") return raw
+  if (
+    raw === "query_full" ||
+    raw === "intent_regen" ||
+    raw === "article_regen_keep_title" ||
+    raw === "article_content_generate"
+  ) return raw
   return null
 }
 
@@ -659,7 +664,7 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     const order = searchDB.createGenerationOrder({
       queryId,
       intentId,
-      kind: "article_regen_keep_title",
+      kind: "article_content_generate",
       requestedBy: "user",
       requestPayload: { keepTitle: true },
     })
@@ -760,14 +765,17 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     const limit = parsePositiveIntOrDefault(limitRaw, 120)
     const offset = parsePositiveIntOrDefault(offsetRaw, 0)
     const status = parseArticleRunStatus(req.query.status)
+    const kind = req.query.kind === "preview" || req.query.kind === "content" ? req.query.kind : null
 
     const runs = searchDB.listArticleGenerationRuns({
       limit,
       offset,
       status: status ?? undefined,
+      kind: kind ?? undefined,
     })
     const total = searchDB.countArticleGenerationRuns({
       status: status ?? undefined,
+      kind: kind ?? undefined,
     })
 
     res.json({
@@ -892,15 +900,17 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
     res.json(payload)
   })
 
-  router.get("/search/eta", (_req, res) => {
+  router.get("/search/eta", (req, res) => {
     const enabled = parseBooleanOrDefault(configDB.getValue("search.article_generation_eta.enabled"), true)
     const sampleSize = parsePositiveIntOrDefault(configDB.getValue("search.article_generation_eta.sample_size"), 20)
+    const action = req.query.action === "preview" || req.query.action === "content" ? req.query.action : "content"
     const stats = enabled
-      ? searchDB.getArticleGenerationDurationStats({ sampleSize })
+      ? searchDB.getArticleGenerationDurationStats({ sampleSize, kind: action === "preview" ? "preview" : "content" })
       : { averageDurationMs: null, sampleCount: 0 }
 
     res.json({
       enabled,
+      action,
       sampleSize,
       sampleCount: stats.sampleCount,
       averageDurationMs: stats.averageDurationMs,
@@ -937,7 +947,42 @@ export function createSearchRouter(ctx: AppCtx, eventDispatcher: EventDispatcher
       return
     }
 
-    res.json(payload)
+    let activeOrderId: number | null = null
+    const article = payload.article
+    const query = payload.query
+    const intent = payload.intent
+    const shouldGenerateContent = article.status !== "content_ready" || !article.content
+
+    if (shouldGenerateContent && query && intent) {
+      const activeOrders = searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId: query.id, intentId: intent.id })
+        .filter((order) => order.kind === "article_content_generate" || order.kind === "article_regen_keep_title")
+      if (activeOrders.length > 0) {
+        activeOrderId = activeOrders[0].id
+      } else {
+        const created = searchDB.createGenerationOrder({
+          queryId: query.id,
+          intentId: intent.id,
+          kind: "article_content_generate",
+          requestedBy: "system",
+          requestPayload: { trigger: "article-open" },
+        })
+        const contenders = searchDB.listActiveOrdersForScope({ scopeType: "intent", queryId: query.id, intentId: intent.id })
+          .filter((order) => order.kind === "article_content_generate" || order.kind === "article_regen_keep_title")
+          .sort((a, b) => a.id - b.id)
+        const winner = contenders[0]
+        if (winner && winner.id !== created.id) {
+          searchDB.cancelOrder(created.id)
+          activeOrderId = winner.id
+        } else {
+          activeOrderId = created.id
+        }
+      }
+    }
+
+    res.json({
+      ...payload,
+      activeOrderId,
+    })
   })
 
   return router

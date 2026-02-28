@@ -1,7 +1,7 @@
 export type ApiGenerationOrder = {
   id: number
   queryId: number
-  kind: 'query_full' | 'intent_regen' | 'article_regen_keep_title'
+  kind: 'query_full' | 'intent_regen' | 'article_regen_keep_title' | 'article_content_generate'
   intentId: number | null
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   requestedBy: 'user' | 'system'

@@ -153,14 +153,23 @@ function ensureSlugHasFiletype(slug: string, filetype: string): string {
   return `${normalizedSlug}${suffix}`
 }
 
-function normalizeIntents(intents: string[]): string[] {
-  const unique = new Set<string>()
-  for (const intent of intents) {
-    const value = intent.trim()
-    if (!value) continue
-    unique.add(value)
+function normalizePreviewItems(items: Array<{ intent?: string; title?: string; summary?: string }>): Array<{
+  intent: string
+  title: string
+  summary: string
+}> {
+  const unique = new Map<string, { intent: string; title: string; summary: string }>()
+  for (const item of items) {
+    const intent = (item.intent || "").trim()
+    const title = (item.title || "").trim()
+    const summary = (item.summary || "").trim()
+    if (!intent || !title || !summary) continue
+    const key = intent.toLowerCase()
+    if (!unique.has(key)) {
+      unique.set(key, { intent, title, summary })
+    }
   }
-  return [...unique].slice(0, 5)
+  return [...unique.values()].slice(0, 5)
 }
 
 function requiredConfigValue(configDB: { getValue: (key: string) => string | null }, key: string): string {
@@ -506,32 +515,50 @@ export class OpenaiMagicApi extends AbstractMagicApi {
     const model = requiredConfigValue(configDB, "search.intent_resolve.model")
     const filetype = normalizeFiletype(args.filetype)
 
-    const trace = await this.createToolJsonWithTrace<{ intents?: string[] }>({
+    const trace = await this.createToolJsonWithTrace<{
+      items?: Array<{ intent?: string; title?: string; summary?: string }>
+    }>({
       model,
       system:
-        "Extract user search intents. " +
-        "Output 2-5 concise intents, no duplicates, no numbering, no markdown.",
+        "Resolve intents and generate one preview article metadata item per intent. " +
+        "Return 2-5 deduplicated items. " +
+        "Each item must include: intent, title, summary. " +
+        "intent: A distinct user intent inferred from the query. Must be specific, actionable, and non-overlapping with other intents. " +
+        "title: A clear article headline for this intent. 6-14 words, concrete and specific, no clickbait, no trailing punctuation, no markdown, no quotes. " +
+        "summary: A concise preview shown on search results. 1-2 sentences (max 220 chars). Must state what the article will cover and the value to the user. Factual tone, no lists, no markdown, no filler.",
       user: [
         args.language ? `Language: ${args.language}` : "Language: auto-detect",
         `Query: ${args.query}`,
         `Requested output filetype: ${filetype}`,
       ].join("\n"),
-      toolName: "submit_intents",
-      toolDescription: "Return the resolved search intents",
+      toolName: "submit_search_previews",
+      toolDescription: "Return resolved intents and one preview article metadata item for each intent",
       parameters: {
         type: "object",
         additionalProperties: false,
         properties: {
-          intents: {
+          items: {
             type: "array",
-            items: { type: "string" },
+            minItems: 1,
+            maxItems: 5,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                intent: { type: "string" },
+                title: { type: "string" },
+                summary: { type: "string" },
+              },
+              required: ["intent", "title", "summary"],
+            },
           },
         },
-        required: ["intents"],
+        required: ["items"],
       },
     })
-    const intents = normalizeIntents(trace.parsed.intents ?? [])
-    return { intents: intents.length > 0 ? intents : [args.query.trim()] }
+    const items = normalizePreviewItems(trace.parsed.items ?? [])
+    if (items.length > 0) return { items }
+    throw new Error("Invalid preview response: items are required")
   }
 
   async createArticle(args: {

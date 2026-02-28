@@ -1,7 +1,11 @@
 export type MagicQuality = "low" | "normal" | "high"
 
 export type MagicSearchIntentResult = {
-  intents: string[]
+  items: Array<{
+    intent: string
+    title: string
+    summary: string
+  }>
 }
 
 export type MagicSearchArticleResult = {

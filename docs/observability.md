@@ -27,6 +27,7 @@ Page: `/generation-performance`
 Use for:
 
 - per-article generation timing runs
+- run kind split: `preview` vs `content`
 - duration and LLM duration
 - attempts and status trends
 

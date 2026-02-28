@@ -27,7 +27,9 @@ type Article = {
     id: int
     intent_id: int
     title: string
-    content: string
+    summary: string
+    content?: string
+    status: 'preview_ready' | 'content_generating' | 'content_ready' | 'content_failed'
     createdAt: Dates
 }
 ```

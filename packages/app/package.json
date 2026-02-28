@@ -16,7 +16,11 @@
     "dev:cli": "node --import tsx src/cli.ts",
     "start": "node --import tsx src/cli.ts start",
     "build": "tsc -p tsconfig.json",
-    "smoke:db": "node --import tsx tests/db-smoke.ts"
+    "smoke:db": "node --import tsx tests/db-smoke.ts",
+    "build:frontend": "pnpm -C ../frontend build",
+    "build:runtime": "node scripts/bundle-runtime.mjs",
+    "verify:runtime": "node scripts/verify-runtime.mjs",
+    "prepublishOnly": "pnpm run build && pnpm run smoke:db && pnpm run build:frontend && pnpm run build:runtime && pnpm run verify:runtime"
   },
   "dependencies": {
     "axios": "^1.13.5",

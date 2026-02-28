@@ -10,6 +10,29 @@ import { createRequestLogger } from "./middleware/requestLogger.js"
 import { logDebugJson, logLine } from "../logging/index.js"
 import path from "node:path"
 import fs from "node:fs"
+import { spawn } from "node:child_process"
+
+function resolveOpenUrlHost(host: string): string {
+    const normalized = host.trim()
+    if (!normalized) return "127.0.0.1"
+    if (normalized === "0.0.0.0" || normalized === "::" || normalized === "::0") return "127.0.0.1"
+    return normalized
+}
+
+function openBrowser(url: string): void {
+    if (process.platform === "darwin") {
+        const child = spawn("open", [url], { detached: true, stdio: "ignore" })
+        child.unref()
+        return
+    }
+    if (process.platform === "win32") {
+        const child = spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" })
+        child.unref()
+        return
+    }
+    const child = spawn("xdg-open", [url], { detached: true, stdio: "ignore" })
+    child.unref()
+}
 
 export function createServer(appCtx: AppCtx) {
     const app = express()
@@ -58,9 +81,19 @@ export function createServer(appCtx: AppCtx) {
 export function startServer(appCtx: AppCtx) {
     const { app, eventDispatcher } = createServer(appCtx)
     const stopWorker = startLLMWorker(appCtx, eventDispatcher)
-    const { host, port } = appCtx.config.server
+    const { host, port, openBrowser: shouldOpenBrowser } = appCtx.config.server
     const server = app.listen(port, host, () => {
         logLine("info", `Server running on http://${host}:${port}`)
+        if (shouldOpenBrowser) {
+            const url = `http://${resolveOpenUrlHost(host)}:${port}`
+            try {
+                openBrowser(url)
+                logLine("info", `Opened browser: ${url}`)
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error)
+                logLine("info", `Failed to open browser: ${message}`)
+            }
+        }
     })
 
     server.on("close", () => {

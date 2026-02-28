@@ -8,6 +8,7 @@
 | `YAH_ON_DB_SCHEMA_CONFLICT` | `quit` | `quit` or `backup-and-overwrite`. |
 | `YAH_ENABLE_CONFIG_ROUTES` | `true` | Enable `/config` HTTP routes. |
 | `YAH_SERVE_WEB_UI` | `true` | Serve bundled SPA assets from backend when available. Set `0` for Vite-proxy dev mode. |
+| `YAH_OPEN_BROWSER` | `true` | Auto-open default browser at server URL on startup. Set `0` or `false` to disable. |
 | `YAH_HOST` | `127.0.0.1` | Backend bind host. |
 | `YAH_PORT` | `11111` | Backend bind port. |
 | `YAH_MAGIC_PROVIDER` | `openai` | `openai` or `dev`. |

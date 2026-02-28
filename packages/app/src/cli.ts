@@ -33,6 +33,7 @@ const DEFAULT_ENV_TEMPLATE = `# yah environment configuration
 # YAH_PORT=11111
 # YAH_ENABLE_CONFIG_ROUTES=1
 # YAH_SERVE_WEB_UI=1
+# YAH_OPEN_BROWSER=1
 # YAH_DEBUG=0
 
 # Runtime paths
